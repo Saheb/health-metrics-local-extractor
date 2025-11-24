@@ -1,0 +1,121 @@
+
+import sqlite3
+import json
+from pydantic import BaseModel
+from typing import List, Optional, Any
+
+DB_NAME = "health_metrics.db"
+
+# Standardize test names
+# Standardize test names
+TEST_NAME_MAPPINGS = {
+    "Cholesterol, Total": "Total Cholesterol",
+    "Cholesterol Total": "Total Cholesterol",
+    "ERYTHROCYTE SEDIMENTATION RATE (ESR)": "ESR",
+    "Erythrocyte Sedimentation Rate (Modified Westergren)": "ESR",
+    "LDL Cholesterol,Direct": "LDL Cholesterol",
+    "GLUCOSE, FASTING (F), PLASMA": "Fasting Glucose",
+    "Glucose-Fasting": "Fasting Glucose",
+    "Bilirubin - Direct": "Direct Bilirubin",
+    "Bilirubin-Total": "Total Bilirubin",
+    "Serum SGPT/ALT": "SGPT/ALT",
+    "SGOT/AST": "SGOT/AST",
+    "Serum Uric Acid": "Uric Acid",
+    "Serium URIC ACID": "Uric Acid",
+    "Serum Albumin": "Albumin",
+    "Serum Globulin": "Globulin",
+    "VITAMIN B-12": "Vitamin B12",
+    "VITAMIN D": "Vitamin D",
+    "Vitamin D Total-25 Hydroxy": "Vitamin D",
+    "25-OH Vitamin D (Total)": "Vitamin D",
+}
+
+def normalize_test_name(name: str) -> str:
+    if not name:
+        return name
+        
+    name = name.strip()
+    
+    # 1. Exact/Explicit Mapping
+    if name in TEST_NAME_MAPPINGS:
+        return TEST_NAME_MAPPINGS[name]
+    
+    # 2. Generic Keyword-based Rules (Case-insensitive)
+    name_lower = name.lower()
+    
+    # Vitamin D variations
+    if "vitamin d" in name_lower and ("total" in name_lower or "25" in name_lower or "hydroxy" in name_lower):
+        return "Vitamin D"
+        
+    # HbA1c variations
+    if "hba1c" in name_lower:
+        return "HbA1c"
+        
+    # Calcium variations
+    if "calcium" in name_lower and "total" in name_lower:
+        return "Calcium Total"
+        
+    return name
+
+def init_db():
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS metrics (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            test_name TEXT,
+            value TEXT,
+            unit TEXT,
+            reference_range TEXT,
+            report_date TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    # Add unique constraint to prevent duplicates
+    try:
+        cursor.execute('''
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_metrics_unique 
+            ON metrics (test_name, value, unit, report_date)
+        ''')
+    except sqlite3.OperationalError:
+        print("Warning: Could not create unique index. You may have duplicate data.")
+        
+    conn.commit()
+    conn.close()
+
+class MetricData(BaseModel):
+    test_name: Optional[str] = None
+    value: Optional[Any] = None
+    unit: Optional[str] = None
+    reference_range: Optional[Any] = None
+    report_date: Optional[str] = None
+
+def save_metric(metric: MetricData):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    # Normalize test name
+    test_name = normalize_test_name(metric.test_name)
+
+    # Ensure value and reference_range are strings
+    value_str = str(metric.value) if metric.value is not None else None
+    ref_range_str = str(metric.reference_range) if metric.reference_range is not None else None
+
+    try:
+        cursor.execute('''
+            INSERT OR IGNORE INTO metrics (test_name, value, unit, reference_range, report_date)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (test_name, value_str, metric.unit, ref_range_str, metric.report_date))
+        conn.commit()
+        return cursor.lastrowid
+    finally:
+        conn.close()
+
+def get_all_metrics():
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM metrics ORDER BY created_at DESC')
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
