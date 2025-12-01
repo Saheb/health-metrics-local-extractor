@@ -64,6 +64,7 @@ IMPORTANT: Return MINIFIED JSON. Do NOT pretty-print. Do NOT use newlines inside
 Do NOT return a JSON array (no [ or ]).
 Do NOT use trailing commas between objects.
 Each object must have these keys: "test_name", "value", "unit", "reference_range", "report_date".
+"report_date" MUST be in YYYY-MM-DD format (e.g., 2023-02-16).
 If a value is missing, use null.
 Do not include any explanation, just the JSON objects.
 

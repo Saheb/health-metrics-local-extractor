@@ -3,10 +3,10 @@ import sqlite3
 import json
 from pydantic import BaseModel
 from typing import List, Optional, Any
+from dateutil import parser
 
 DB_NAME = "health_metrics.db"
 
-# Standardize test names
 # Standardize test names
 TEST_NAME_MAPPINGS = {
     "Cholesterol, Total": "Total Cholesterol",
@@ -29,6 +29,27 @@ TEST_NAME_MAPPINGS = {
     "Vitamin D Total-25 Hydroxy": "Vitamin D",
     "25-OH Vitamin D (Total)": "Vitamin D",
 }
+
+def normalize_date(date_str: Optional[str]) -> Optional[str]:
+    """
+    Normalizes a date string to YYYY-MM-DD format.
+    Returns None if parsing fails or input is None.
+    """
+    if not date_str:
+        return None
+    
+    try:
+        # Parse the date string
+        dt = parser.parse(date_str, dayfirst=True) # Assume day comes first for ambiguous dates like 01/02/2023 (common in medical reports)
+        return dt.strftime("%Y-%m-%d")
+    except (ValueError, TypeError):
+        # If parsing fails, return the original string or None?
+        # Returning original string might preserve bad data but avoids data loss.
+        # Returning None cleans it but loses info.
+        # Let's return original string if it looks somewhat like a date, or just return it as is.
+        # Actually, if we want to deduplicate, we need consistent format.
+        # If we can't parse it, we can't normalize it.
+        return date_str
 
 def normalize_test_name(name: str) -> str:
     if not name:
@@ -97,6 +118,9 @@ def save_metric(metric: MetricData):
     # Normalize test name
     test_name = normalize_test_name(metric.test_name)
 
+    # Normalize report date
+    report_date = normalize_date(metric.report_date)
+
     # Ensure value and reference_range are strings
     value_str = str(metric.value) if metric.value is not None else None
     ref_range_str = str(metric.reference_range) if metric.reference_range is not None else None
@@ -105,7 +129,7 @@ def save_metric(metric: MetricData):
         cursor.execute('''
             INSERT OR IGNORE INTO metrics (test_name, value, unit, reference_range, report_date)
             VALUES (?, ?, ?, ?, ?)
-        ''', (test_name, value_str, metric.unit, ref_range_str, metric.report_date))
+        ''', (test_name, value_str, metric.unit, ref_range_str, report_date))
         conn.commit()
         return cursor.lastrowid
     finally:
