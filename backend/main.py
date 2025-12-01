@@ -6,7 +6,12 @@ from llm_engine import get_llm_engine
 from database import init_db, save_metric, get_all_metrics, MetricData
 import uvicorn
 
+import asyncio
+
 app = FastAPI(title="Health Metrics Local Extractor")
+
+# Global lock for LLM inference to prevent race conditions
+llm_lock = asyncio.Lock()
 
 # Allow CORS for frontend
 app.add_middleware(
@@ -53,15 +58,21 @@ async def extract_health_data(file: UploadFile = File(...)):
         llm = get_llm_engine()
         
         # Generator function for StreamingResponse
-        def generate():
-            try:
-                for chunk in llm.extract_health_parameters(text):
-                    yield chunk
-            except Exception as e:
-                print(f"ERROR during streaming: {e}")
-                # We can't change the status code now, but we can yield an error message if the frontend expects it
-                # or just let the stream end. Printing is key for debugging.
-                yield f"\n\n[ERROR] Stream interrupted: {str(e)}"
+        async def generate():
+            # Acquire lock to ensure only one inference runs at a time
+            async with llm_lock:
+                try:
+                    # Run the blocking generator in a thread pool to not block the event loop
+                    # However, since we are streaming, we need to iterate carefully.
+                    # Simple approach: iterate the generator directly inside the lock.
+                    # Since this is a generator, we yield chunks.
+                    for chunk in llm.extract_health_parameters(text):
+                        yield chunk
+                        # Small sleep to yield control if needed, though not strictly necessary with lock
+                        await asyncio.sleep(0) 
+                except Exception as e:
+                    print(f"ERROR during streaming: {e}")
+                    yield f"\n\n[ERROR] Stream interrupted: {str(e)}"
 
         return StreamingResponse(generate(), media_type="text/plain")
     except Exception as e:

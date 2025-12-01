@@ -3,6 +3,7 @@ import FileUpload from './components/FileUpload';
 import ResultsDisplay from './components/ResultsDisplay';
 import SavedMetrics from './components/SavedMetrics';
 import TrendView from './components/TrendView';
+import FileProgress from './components/FileProgress';
 import './App.css'; // We'll put styles in index.css mostly, but keep this import
 
 function App() {
@@ -11,6 +12,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [autoSave, setAutoSave] = useState(true);
+  const [fileStatuses, setFileStatuses] = useState([]);
 
   const saveItem = async (item) => {
     try {
@@ -27,10 +29,11 @@ function App() {
     }
   };
 
-  const handleUpload = async (file) => {
-    setIsLoading(true);
-    setError(null);
-    setData([]);
+  const processFile = async (file) => {
+    // Update status to processing
+    setFileStatuses(prev => prev.map(f =>
+      f.name === file.name ? { ...f, status: 'processing' } : f
+    ));
 
     const formData = new FormData();
     formData.append('file', file);
@@ -42,7 +45,7 @@ function App() {
       });
 
       if (!response.ok) {
-        throw new Error(`Error: ${response.statusText}`);
+        throw new Error(`Error processing ${file.name}: ${response.statusText}`);
       }
 
       const reader = response.body.getReader();
@@ -70,11 +73,13 @@ function App() {
               try {
                 const cleanJsonStr = jsonStr.replace(/\\_/g, '_');
                 const item = JSON.parse(cleanJsonStr);
-                setData(prev => [...prev, item]);
+                // Add source file name to the item for context
+                const itemWithSource = { ...item, sourceFile: file.name };
+                setData(prev => [...prev, itemWithSource]);
 
                 // Auto-save trigger
                 if (autoSave) {
-                  saveItem(item);
+                  saveItem(itemWithSource);
                 }
 
                 buffer = buffer.substring(i + 1);
@@ -89,14 +94,46 @@ function App() {
             }
           }
         }
-
       }
+
+      // Update status to complete
+      setFileStatuses(prev => prev.map(f =>
+        f.name === file.name ? { ...f, status: 'complete' } : f
+      ));
+
     } catch (err) {
       console.error(err);
-      setError(err.message || "Failed to extract data");
-    } finally {
-      setIsLoading(false);
+      // Update status to error
+      setFileStatuses(prev => prev.map(f =>
+        f.name === file.name ? { ...f, status: 'error', error: err.message } : f
+      ));
+      // We accumulate errors rather than replacing them, or just log them
+      setError(prev => prev ? `${prev}\n${err.message}` : err.message);
     }
+  };
+
+  const handleUpload = async (files) => {
+    setIsLoading(true);
+    setError(null);
+    setData([]);
+
+    // Ensure files is an array
+    const fileList = Array.isArray(files) ? files : [files];
+
+    // Initialize statuses
+    const initialStatuses = fileList.map(file => ({
+      name: file.name,
+      status: 'pending', // pending, processing, complete, error
+      error: null
+    }));
+    setFileStatuses(initialStatuses);
+
+    // Process files sequentially
+    for (const file of fileList) {
+      await processFile(file);
+    }
+
+    setIsLoading(false);
   };
 
   return (
@@ -141,6 +178,7 @@ function App() {
             </div>
 
             <FileUpload onUpload={handleUpload} isLoading={isLoading} />
+            <FileProgress files={fileStatuses} />
             {error && <div className="error-message">{error}</div>}
             {data.length > 0 && <ResultsDisplay data={data} onSave={saveItem} />}
           </>
