@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from extractor import extract_text_from_pdf
 from llm_engine import get_llm_engine
-from database import init_db, save_metric, get_all_metrics, MetricData
+from database import init_db, save_metric, get_all_metrics, MetricData, save_processed_file, get_processed_files, ProcessedFileData
 import uvicorn
 
 import asyncio
@@ -43,6 +43,21 @@ async def get_metrics_endpoint():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/history")
+async def get_history_endpoint():
+    try:
+        return get_processed_files()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/record_file_processing")
+async def record_file_processing_endpoint(data: ProcessedFileData):
+    try:
+        save_processed_file(data)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/extract")
 async def extract_health_data(file: UploadFile = File(...)):
     if not file.filename.endswith(".pdf"):
@@ -58,18 +73,29 @@ async def extract_health_data(file: UploadFile = File(...)):
         llm = get_llm_engine()
         
         # Generator function for StreamingResponse
+        # Generator function for StreamingResponse
         async def generate():
             # Acquire lock to ensure only one inference runs at a time
             async with llm_lock:
                 try:
                     # Run the blocking generator in a thread pool to not block the event loop
-                    # However, since we are streaming, we need to iterate carefully.
-                    # Simple approach: iterate the generator directly inside the lock.
-                    # Since this is a generator, we yield chunks.
-                    for chunk in llm.extract_health_parameters(text):
-                        yield chunk
-                        # Small sleep to yield control if needed, though not strictly necessary with lock
-                        await asyncio.sleep(0) 
+                    # We use anyio.to_thread.run_sync to run the next() call in a separate thread
+                    from anyio import to_thread
+                    
+                    iterator = llm.extract_health_parameters(text)
+                    
+                    while True:
+                        try:
+                            # This runs the blocking next(iterator) in a thread
+                            chunk = await to_thread.run_sync(next, iterator)
+                            yield chunk
+                        except StopIteration:
+                            break
+                        except Exception as e:
+                            print(f"ERROR during generation: {e}")
+                            yield f"\n\n[ERROR] Generation failed: {str(e)}"
+                            break
+                            
                 except Exception as e:
                     print(f"ERROR during streaming: {e}")
                     yield f"\n\n[ERROR] Stream interrupted: {str(e)}"

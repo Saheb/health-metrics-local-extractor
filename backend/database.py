@@ -81,10 +81,12 @@ def normalize_test_name(name: str) -> str:
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
+    
+    # Metrics table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS metrics (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            test_name TEXT,
+            test_name TEXT NOT NULL,
             value TEXT,
             unit TEXT,
             reference_range TEXT,
@@ -92,15 +94,33 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    # Add unique constraint to prevent duplicates
+    
+    # Create unique index to prevent duplicates
+    # We consider a record duplicate if test_name, value, unit, and report_date match
+    cursor.execute('''
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_metrics_unique 
+        ON metrics(test_name, value, unit, report_date)
+    ''')
+
+    # Processed files table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS processed_files (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            filename TEXT NOT NULL,
+            upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            status TEXT NOT NULL,
+            data_points_extracted INTEGER DEFAULT 0,
+            report_date TEXT
+        )
+    ''')
+    
+    # Migration: Add report_date column if it doesn't exist (for existing databases)
     try:
-        cursor.execute('''
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_metrics_unique 
-            ON metrics (test_name, value, unit, report_date)
-        ''')
+        cursor.execute('ALTER TABLE processed_files ADD COLUMN report_date TEXT')
     except sqlite3.OperationalError:
-        print("Warning: Could not create unique index. You may have duplicate data.")
-        
+        # Column likely already exists
+        pass
+
     conn.commit()
     conn.close()
 
@@ -109,6 +129,12 @@ class MetricData(BaseModel):
     value: Optional[Any] = None
     unit: Optional[str] = None
     reference_range: Optional[Any] = None
+    report_date: Optional[str] = None
+
+class ProcessedFileData(BaseModel):
+    filename: str
+    status: str
+    data_points_extracted: int
     report_date: Optional[str] = None
 
 def save_metric(metric: MetricData):
@@ -135,11 +161,33 @@ def save_metric(metric: MetricData):
     finally:
         conn.close()
 
+def save_processed_file(data: ProcessedFileData):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            INSERT INTO processed_files (filename, status, data_points_extracted)
+            VALUES (?, ?, ?)
+        ''', (data.filename, data.status, data.data_points_extracted))
+        conn.commit()
+        return cursor.lastrowid
+    finally:
+        conn.close()
+
 def get_all_metrics():
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM metrics ORDER BY created_at DESC')
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+def get_processed_files():
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM processed_files ORDER BY upload_date DESC')
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]

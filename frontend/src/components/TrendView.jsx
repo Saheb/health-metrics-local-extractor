@@ -27,6 +27,7 @@ const TrendView = () => {
     const [loading, setLoading] = useState(true);
     const [selectedTest, setSelectedTest] = useState('');
     const [availableTests, setAvailableTests] = useState([]);
+    const [testCounts, setTestCounts] = useState({});
 
     useEffect(() => {
         fetch('http://localhost:8000/metrics')
@@ -35,16 +36,18 @@ const TrendView = () => {
                 setMetrics(data);
 
                 // Count occurrences of each test
-                const testCounts = {};
+                const counts = {};
                 data.forEach(item => {
                     if (item.test_name && item.value && item.report_date) {
-                        testCounts[item.test_name] = (testCounts[item.test_name] || 0) + 1;
+                        counts[item.test_name] = (counts[item.test_name] || 0) + 1;
                     }
                 });
 
+                setTestCounts(counts);
+
                 // Filter tests with >= 2 data points
-                const tests = Object.keys(testCounts)
-                    .filter(test => testCounts[test] >= 2)
+                const tests = Object.keys(counts)
+                    .filter(test => counts[test] >= 2)
                     .sort();
 
                 setAvailableTests(tests);
@@ -144,7 +147,7 @@ const TrendView = () => {
                     style={{ padding: '0.5rem', borderRadius: '0.5rem', border: '1px solid #ccc' }}
                 >
                     {availableTests.map(test => (
-                        <option key={test} value={test}>{test}</option>
+                        <option key={test} value={test}>{test} ({testCounts[test]})</option>
                     ))}
                 </select>
             </div>
@@ -186,6 +189,35 @@ const TrendView = () => {
                 <div style={{ marginTop: '2rem', padding: '1.5rem', background: '#f0f9ff', borderRadius: '1rem', borderLeft: '5px solid #2563eb' }}>
                     <h3 style={{ marginTop: 0, color: '#1e40af' }}>What is {selectedTest}?</h3>
                     <p style={{ margin: 0, lineHeight: '1.6', color: '#1e3a8a' }}>{TEST_DEFINITIONS[selectedTest]}</p>
+                </div>
+            )}
+
+            {/* Data Points Table */}
+            {chartData.length > 0 && (
+                <div style={{ marginTop: '2rem' }}>
+                    <h3>Data Points</h3>
+                    <div style={{ overflowX: 'auto', borderRadius: '0.5rem', border: '1px solid #e5e7eb' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                            <thead>
+                                <tr style={{ background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
+                                    <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontWeight: '600', color: '#374151' }}>Date</th>
+                                    <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontWeight: '600', color: '#374151' }}>Value</th>
+                                    <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontWeight: '600', color: '#374151' }}>Unit</th>
+                                    <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontWeight: '600', color: '#374151' }}>Reference Range</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {chartData.map((point, index) => (
+                                    <tr key={index} style={{ borderBottom: index < chartData.length - 1 ? '1px solid #e5e7eb' : 'none', background: index % 2 === 0 ? 'white' : '#f9fafb' }}>
+                                        <td style={{ padding: '0.75rem 1rem', color: '#111827' }}>{point.date}</td>
+                                        <td style={{ padding: '0.75rem 1rem', color: '#111827', fontWeight: '500' }}>{point.originalValue}</td>
+                                        <td style={{ padding: '0.75rem 1rem', color: '#6b7280' }}>{point.unit}</td>
+                                        <td style={{ padding: '0.75rem 1rem', color: '#6b7280' }}>{point.refRange || '-'}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             )}
         </div>
