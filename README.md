@@ -2,15 +2,27 @@
 
 A private, offline-first web application that extracts health metrics from PDF medical reports using a local LLM (Mistral-7B). It parses, stores, and visualizes your health data trends without ever sending your sensitive documents to the cloud.
 
+![Health Trends View](docs/screenshot-trends.png)
+
 ## Features
 
+### Core
 *   **Offline & Private**: All processing happens locally on your machine. No data leaves your computer.
 *   **PDF Extraction**: Upload PDF medical reports to extract structured data (Test Name, Value, Unit, Reference Range, Date).
+*   **OCR Support**: Automatically uses OCR for scanned PDFs when text extraction fails.
 *   **Local LLM**: Powered by `Mistral-7B-Instruct` running via `llama-cpp-python`.
 *   **Database Storage**: Automatically saves extracted metrics to a local SQLite database (`health_metrics.db`).
-*   **Data Normalization**: Automatically standardizes test names (e.g., merges "Vitamin D Total" and "25-OH Vitamin D" into "Vitamin D").
-*   **Trend Visualization**: View historical trends of your health metrics with interactive charts and normal range indicators.
-*   **Health Definitions**: Provides simple explanations for common health parameters.
+
+### Data Quality & Normalization  
+*   **Test Name Standardization**: Merges variations like "Vitamin D Total", "25-OH Vitamin D" → "Vitamin D".
+*   **Unit Normalization**: Standardizes units (e.g., `mg/dl` → `mg/dL`) and converts between systems (mmol/L → mg/dL for cholesterol).
+*   **Reference Range Cleanup**: Removes redundant units, normalizes formatting (`<200.00 mg/dL` → `<200`).
+*   **Auto-fill Reference Ranges**: Missing reference ranges are automatically populated from previous readings of the same test.
+*   **Anti-Hallucination**: Validates LLM output to prevent fake/invented values from being saved.
+
+### Visualization
+*   **Trend Charts**: View historical trends with interactive charts showing your values vs. normal ranges.
+*   **Health Definitions**: Simple explanations for common health parameters.
 
 ## Tech Stack
 

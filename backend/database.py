@@ -139,6 +139,61 @@ def normalize_unit(unit: str, test_name: str = None) -> tuple[str, float]:
     
     return normalized, 1.0
 
+
+def normalize_reference_range(ref_range: str) -> str:
+    """
+    Normalizes a reference range string to a consistent format.
+    - Removes units (they belong in the unit column)
+    - Removes unnecessary decimal places (.00)
+    - Removes brackets []
+    - Standardizes spacing
+    """
+    import re
+    
+    if not ref_range:
+        return ref_range
+    
+    ref = ref_range.strip()
+    
+    # Return empty string for dashes or "None"
+    if ref in ['-', '--', 'None', 'null', '']:
+        return ''
+    
+    # Remove square brackets
+    ref = ref.replace('[', '').replace(']', '')
+    
+    # Remove common unit suffixes (case-insensitive)
+    unit_patterns = [
+        r'\s*mg/dl\s*', r'\s*mg/dL\s*', r'\s*g/dl\s*', r'\s*g/dL\s*',
+        r'\s*ng/ml\s*', r'\s*ng/mL\s*', r'\s*pg/ml\s*', r'\s*pg/mL\s*',
+        r'\s*µg/dl\s*', r'\s*µg/dL\s*', r'\s*ug/dl\s*', r'\s*ug/dL\s*',
+        r'\s*µIU/ml\s*', r'\s*µIU/mL\s*', r'\s*uIU/ml\s*',
+        r'\s*IU/L\s*', r'\s*U/l\s*', r'\s*U/L\s*',
+        r'\s*mm/hr\s*', r'\s*mm/h\s*',
+        r'\s*seconds\s*', r'\s*sec\s*',
+        r'\s*%\s*$',  # Only remove % at the end
+    ]
+    for pattern in unit_patterns:
+        ref = re.sub(pattern, '', ref, flags=re.IGNORECASE)
+    
+    # Remove trailing .00 or .0 from numbers (keep meaningful decimals)
+    # e.g., "<200.00" -> "<200", "4.00-5.60" -> "4-5.6"
+    ref = re.sub(r'(\d+)\.00\b', r'\1', ref)
+    ref = re.sub(r'(\d+\.\d*[1-9])0+\b', r'\1', ref)  # "5.60" -> "5.6"
+    
+    # Standardize spacing around hyphens (ranges)
+    # "0 - 15" -> "0-15", "0.0 - 1.0" -> "0-1"
+    ref = re.sub(r'\s*-\s*', '-', ref)
+    
+    # Standardize comparison operators (no space after <, >)
+    ref = re.sub(r'<\s+', '<', ref)
+    ref = re.sub(r'>\s+', '>', ref)
+    
+    # Clean up any double spaces
+    ref = re.sub(r'\s+', ' ', ref).strip()
+    
+    return ref
+
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
@@ -240,9 +295,21 @@ def save_metric(metric: MetricData):
         except (ValueError, TypeError):
             pass  # Keep original value if not numeric
 
-    # Ensure value and reference_range are strings
+    # Ensure value and reference_range are strings, and normalize reference_range
     value_str = str(value) if value is not None else None
-    ref_range_str = str(metric.reference_range) if metric.reference_range is not None else None
+    ref_range_str = normalize_reference_range(str(metric.reference_range)) if metric.reference_range is not None else None
+
+    # Auto-fill missing reference ranges from existing data
+    if not ref_range_str or ref_range_str == '':
+        cursor.execute('''
+            SELECT reference_range FROM metrics 
+            WHERE test_name = ? AND reference_range IS NOT NULL AND reference_range != ''
+            ORDER BY report_date DESC LIMIT 1
+        ''', (test_name,))
+        row = cursor.fetchone()
+        if row:
+            ref_range_str = row[0]
+            print(f"Auto-filled reference range for {test_name}: {ref_range_str}")
 
     try:
         cursor.execute('''
