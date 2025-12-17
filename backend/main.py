@@ -106,12 +106,18 @@ async def extract_health_data(file: UploadFile = File(...)):
                         
                         iterator = llm.extract_health_parameters(chunk_text)
                         
+                        # Use sentinel pattern to avoid StopIteration in async generator
+                        # (Python 3.7+ treats StopIteration in generators/coroutines as error)
+                        _sentinel = object()
+                        
                         while True:
                             try:
-                                output = await to_thread.run_sync(next, iterator)
+                                output = await to_thread.run_sync(
+                                    lambda it=iterator: next(it, _sentinel)
+                                )
+                                if output is _sentinel:
+                                    break
                                 yield output
-                            except StopIteration:
-                                break
                             except Exception as e:
                                 print(f"ERROR during generation: {e}")
                                 yield f"\n\n[ERROR] Generation failed: {str(e)}"

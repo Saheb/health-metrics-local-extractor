@@ -202,6 +202,24 @@ def save_metric(metric: MetricData):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     
+    # VALIDATION: Reject entries without valid values (prevents hallucinated data)
+    if metric.value is None or metric.value == '' or str(metric.value).lower() == 'null':
+        print(f"Rejecting entry without value: {metric.test_name}")
+        conn.close()
+        return None
+    
+    # Try to validate the value is somewhat reasonable
+    value_str = str(metric.value)
+    try:
+        float(value_str)
+    except (ValueError, TypeError):
+        # Allow some non-numeric values
+        allowed_non_numeric = ['negative', 'positive', 'normal', 'nil', 'absent', 'present', 'trace', 'male', 'female']
+        if value_str.lower() not in allowed_non_numeric:
+            print(f"Rejecting entry with invalid value: {metric.test_name} = {metric.value}")
+            conn.close()
+            return None
+
     # Normalize test name
     test_name = normalize_test_name(metric.test_name)
 

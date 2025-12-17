@@ -38,11 +38,19 @@ class LLMEngine:
 Extract all health parameters, test results, and vital signs from the following text.
 Also extract the "Report Date" or "Collection Date" from the document.
 
-CRITICAL INSTRUCTIONS:
-1. EXCLUDE all patient metadata (Name, Age, Sex, ID, Registration No, Patient Episode).
-2. EXCLUDE all doctor/hospital metadata (Referred By, KMC No, Hospital Name).
-3. EXCLUDE isolated dates that are not the Report Date.
-4. ONLY extract actual medical test results.
+CRITICAL INSTRUCTIONS - FOLLOW EXACTLY:
+1. ONLY extract data that EXPLICITLY appears in the text. NEVER invent, guess, or hallucinate values.
+2. If a test name appears but has no value, DO NOT output it.
+3. EXCLUDE all patient metadata (Name, Age, Sex, ID, Registration No, Patient Episode).
+4. EXCLUDE all doctor/hospital metadata (Referred By, KMC No, Hospital Name).
+5. EXCLUDE isolated dates that are not the Report Date.
+6. ONLY extract actual medical test results WITH numeric values.
+7. If you cannot find any test results with values, output nothing.
+
+ANTI-HALLUCINATION CHECK:
+- Every "value" you output MUST be a number that appears verbatim in the input text.
+- Do NOT output placeholder values like 100, 150, 200 unless they appear in the text.
+- If unsure, DO NOT include the result.
 
 USE STANDARD NAMES where possible:
 - "Total Cholesterol" (not "Cholesterol, Total")
@@ -63,7 +71,7 @@ Do NOT return a JSON array (no [ or ]).
 Do NOT use trailing commas between objects.
 Each object must have these keys: "test_name", "value", "unit", "reference_range", "report_date".
 "report_date" MUST be in YYYY-MM-DD format (e.g., 2023-02-16).
-If a value is missing, use null.
+If a value is missing, skip that test entirely - do NOT output null values.
 Do not include any explanation, just the JSON objects.
 
 Text:

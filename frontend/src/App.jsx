@@ -62,59 +62,106 @@ function App() {
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      let buffer = '';
+      let fullOutput = '';
       let extractedCount = 0;
       let reportDate = null;
 
+      // Collect all streamed output first
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
-
         const chunk = decoder.decode(value, { stream: true });
-        buffer += chunk;
+        fullOutput += chunk;
+      }
 
-        const lines = buffer.split('\n');
-        buffer = lines.pop(); // Keep incomplete line in buffer
+      // Clean up the output:
+      // 1. Remove escaped underscores (LLM sometimes outputs \_ instead of _)
+      // 2. Remove any comment lines
+      let cleanedOutput = fullOutput.replace(/\\_/g, '_');
 
-        for (const line of lines) {
-          const trimmedLine = line.trim();
-          // Skip empty lines and comment lines (starting with #)
-          if (!trimmedLine || trimmedLine.startsWith('#')) {
+      // Remove comment lines (lines starting with #)
+      cleanedOutput = cleanedOutput.split('\n')
+        .filter(line => !line.trim().startsWith('#'))
+        .join('\n');
+
+      // Try to extract JSON objects from the output
+      // The LLM might output:
+      // 1. JSON Lines (one object per line) - ideal
+      // 2. Pretty-printed JSON objects (multiline) - common
+      // 3. A JSON array [obj1, obj2, ...] - possible
+
+      const extractedObjects = [];
+
+      // First, try to parse as JSON array
+      try {
+        const trimmed = cleanedOutput.trim();
+        if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+          const arr = JSON.parse(trimmed);
+          if (Array.isArray(arr)) {
+            extractedObjects.push(...arr);
+          }
+        }
+      } catch (e) {
+        // Not a valid JSON array, continue
+      }
+
+      // If no objects found, try extracting individual JSON objects using regex
+      if (extractedObjects.length === 0) {
+        // Match JSON objects: { ... }
+        // This regex handles nested braces properly
+        const jsonRegex = /\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g;
+        const matches = cleanedOutput.match(jsonRegex);
+
+        if (matches) {
+          for (const match of matches) {
+            try {
+              const obj = JSON.parse(match);
+              // Validate it has expected fields
+              if (obj.test_name || obj.value !== undefined) {
+                extractedObjects.push(obj);
+              }
+            } catch (e) {
+              console.log("Could not parse JSON object:", match.substring(0, 100));
+            }
+          }
+        }
+      }
+
+      // Process extracted objects
+      for (const json of extractedObjects) {
+        // VALIDATION: Skip entries without valid values (prevents hallucinated data)
+        // Value must exist and be a non-empty number or numeric string
+        const value = json.value;
+        if (value === null || value === undefined || value === '' || value === 'null') {
+          console.log(`Skipping entry without value: ${json.test_name}`);
+          continue;
+        }
+
+        // Check if value is numeric (allows strings like "4.2" or numbers like 4.2)
+        const numericValue = parseFloat(value);
+        if (isNaN(numericValue)) {
+          // Allow some non-numeric values like "Negative", "Positive", "Normal", etc.
+          const allowedNonNumeric = ['negative', 'positive', 'normal', 'nil', 'absent', 'present', 'trace', 'male', 'female'];
+          if (!allowedNonNumeric.includes(String(value).toLowerCase())) {
+            console.log(`Skipping entry with non-numeric value: ${json.test_name} = ${value}`);
             continue;
           }
-          try {
-            const json = JSON.parse(trimmedLine);
-            // Add source file info
-            const dataWithSource = { ...json, sourceFile: file.name };
-
-            // Capture report date if found and not already set
-            if (!reportDate && json.report_date) {
-              reportDate = json.report_date;
-            }
-
-            // Auto-save to DB
-            saveToDatabase(dataWithSource);
-            extractedCount++;
-          } catch (e) {
-            console.log("Partial JSON or non-JSON line:", trimmedLine);
-          }
         }
+
+        // Add source file info
+        const dataWithSource = { ...json, sourceFile: file.name };
+
+        // Capture report date if found and not already set
+        if (!reportDate && json.report_date) {
+          reportDate = json.report_date;
+        }
+
+        // Auto-save to DB
+        saveToDatabase(dataWithSource);
+        extractedCount++;
       }
 
-      // Process any remaining content in buffer after stream ends
-      if (buffer.trim() && !buffer.trim().startsWith('#')) {
-        try {
-          const json = JSON.parse(buffer.trim());
-          const dataWithSource = { ...json, sourceFile: file.name };
-          if (!reportDate && json.report_date) {
-            reportDate = json.report_date;
-          }
-          saveToDatabase(dataWithSource);
-          extractedCount++;
-        } catch (e) {
-          console.log("Final buffer not valid JSON:", buffer.trim());
-        }
-      }
+      console.log(`Extracted ${extractedCount} data points from ${file.name}`);
 
       // Record file processing result
       await fetch('http://localhost:8000/record_file_processing', {
