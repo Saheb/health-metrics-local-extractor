@@ -45,10 +45,10 @@ const TrendView = () => {
 
                 setTestCounts(counts);
 
-                // Filter tests with >= 2 data points
+                // Filter tests with >= 2 data points, sort by count (descending)
                 const tests = Object.keys(counts)
                     .filter(test => counts[test] >= 2)
-                    .sort();
+                    .sort((a, b) => counts[b] - counts[a]);
 
                 setAvailableTests(tests);
                 if (tests.length > 0) {

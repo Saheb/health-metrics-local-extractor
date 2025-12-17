@@ -24,7 +24,35 @@ A private, offline-first web application that extracts health metrics from PDF m
 
 *   Python 3.10+
 *   Node.js & npm
+*   **Tesseract OCR** (for scanned PDF support):
+    ```bash
+    brew install tesseract  # macOS
+    ```
 *   RAM: At least 8GB (16GB recommended for the LLM)
+
+### Quick Start
+
+The easiest way to start the app is with the included script:
+
+```bash
+./start.sh
+```
+
+This will automatically:
+- Create/activate the Python virtual environment
+- Install backend dependencies if needed
+- Install frontend dependencies if needed  
+- Start both servers
+
+Then open **http://localhost:5173** in your browser.
+
+> Press `Ctrl+C` to stop both servers gracefully.
+
+---
+
+### Manual Setup
+
+If you prefer to run the servers separately:
 
 ### 1. Backend Setup
 

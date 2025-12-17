@@ -4,3 +4,6 @@ python-multipart
 llama-cpp-python
 python-dateutil
 pypdf
+pdf2image
+pytesseract
+Pillow

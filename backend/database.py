@@ -9,6 +9,7 @@ DB_NAME = "health_metrics.db"
 
 # Standardize test names
 TEST_NAME_MAPPINGS = {
+    "Cholesterol": "Total Cholesterol",
     "Cholesterol, Total": "Total Cholesterol",
     "Cholesterol Total": "Total Cholesterol",
     "ERYTHROCYTE SEDIMENTATION RATE (ESR)": "ESR",
@@ -28,6 +29,44 @@ TEST_NAME_MAPPINGS = {
     "VITAMIN D": "Vitamin D",
     "Vitamin D Total-25 Hydroxy": "Vitamin D",
     "25-OH Vitamin D (Total)": "Vitamin D",
+}
+
+# Standardize unit spelling (case-insensitive lookup)
+UNIT_MAPPINGS = {
+    "mg/dl": "mg/dL",
+    "u/l": "U/L",
+    "u/L": "U/L",
+    "iu/l": "IU/L",
+    "iu/L": "IU/L",
+    "gm/dl": "g/dL",
+    "gm/dL": "g/dL",
+    "g/dl": "g/dL",
+    "mm/hr": "mm/h",
+    "mm/1sthour": "mm/h",
+    "ng/ml": "ng/mL",
+    "pg/ml": "pg/mL",
+    "ug/dl": "µg/dL",
+    "µiu/ml": "µIU/mL",
+    "µiu/mL": "µIU/mL",
+    "kg/m^2": "kg/m²",
+    "kg/m2": "kg/m²",
+}
+
+# Unit conversions: (from_unit, to_unit, multiplier)
+# These tests need value conversion when unit is mmol/L
+UNIT_CONVERSIONS = {
+    # Cholesterol: mmol/L × 38.67 = mg/dL
+    "Total Cholesterol": ("mmol/L", "mg/dL", 38.67),
+    "LDL Cholesterol": ("mmol/L", "mg/dL", 38.67),
+    "HDL Cholesterol": ("mmol/L", "mg/dL", 38.67),
+    "VLDL Cholesterol": ("mmol/L", "mg/dL", 38.67),
+    "Non-HDL Cholesterol": ("mmol/L", "mg/dL", 38.67),
+    "Cholesterol": ("mmol/L", "mg/dL", 38.67),
+    # Triglycerides: mmol/L × 88.57 = mg/dL
+    "Triglycerides": ("mmol/L", "mg/dL", 88.57),
+    # Glucose: mmol/L × 18.02 = mg/dL
+    "Fasting Glucose": ("mmol/L", "mg/dL", 18.02),
+    "Glucose": ("mmol/L", "mg/dL", 18.02),
 }
 
 def normalize_date(date_str: Optional[str]) -> Optional[str]:
@@ -77,6 +116,28 @@ def normalize_test_name(name: str) -> str:
         return "Calcium Total"
         
     return name
+
+def normalize_unit(unit: str, test_name: str = None) -> tuple[str, float]:
+    """
+    Normalizes a unit string and returns conversion factor if needed.
+    Returns (normalized_unit, conversion_factor).
+    If conversion_factor != 1.0, the value should be multiplied by it.
+    """
+    if not unit:
+        return unit, 1.0
+    
+    unit = unit.strip()
+    
+    # 1. Standardize spelling first
+    normalized = UNIT_MAPPINGS.get(unit, unit)
+    
+    # 2. Check if we need to convert units (e.g., mmol/L to mg/dL)
+    if test_name and test_name in UNIT_CONVERSIONS:
+        from_unit, to_unit, factor = UNIT_CONVERSIONS[test_name]
+        if unit.lower() == from_unit.lower():
+            return to_unit, factor
+    
+    return normalized, 1.0
 
 def init_db():
     conn = sqlite3.connect(DB_NAME)
@@ -147,15 +208,29 @@ def save_metric(metric: MetricData):
     # Normalize report date
     report_date = normalize_date(metric.report_date)
 
+    # Normalize unit and get conversion factor
+    unit, conversion_factor = normalize_unit(metric.unit, test_name)
+    
+    # Convert value if needed (e.g., mmol/L to mg/dL)
+    value = metric.value
+    if conversion_factor != 1.0 and value is not None:
+        try:
+            numeric_value = float(value)
+            converted_value = numeric_value * conversion_factor
+            value = round(converted_value, 1)  # Round to 1 decimal place
+            print(f"Converted {metric.value} {metric.unit} to {value} {unit} for {test_name}")
+        except (ValueError, TypeError):
+            pass  # Keep original value if not numeric
+
     # Ensure value and reference_range are strings
-    value_str = str(metric.value) if metric.value is not None else None
+    value_str = str(value) if value is not None else None
     ref_range_str = str(metric.reference_range) if metric.reference_range is not None else None
 
     try:
         cursor.execute('''
             INSERT OR IGNORE INTO metrics (test_name, value, unit, reference_range, report_date)
             VALUES (?, ?, ?, ?, ?)
-        ''', (test_name, value_str, metric.unit, ref_range_str, report_date))
+        ''', (test_name, value_str, unit, ref_range_str, report_date))
         conn.commit()
         return cursor.lastrowid
     finally:

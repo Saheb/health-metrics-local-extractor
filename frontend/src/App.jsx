@@ -77,24 +77,42 @@ function App() {
         buffer = lines.pop(); // Keep incomplete line in buffer
 
         for (const line of lines) {
-          if (line.trim()) {
-            try {
-              const json = JSON.parse(line);
-              // Add source file info
-              const dataWithSource = { ...json, sourceFile: file.name };
-
-              // Capture report date if found and not already set
-              if (!reportDate && json.report_date) {
-                reportDate = json.report_date;
-              }
-
-              // Auto-save to DB
-              saveToDatabase(dataWithSource);
-              extractedCount++;
-            } catch (e) {
-              console.log("Partial JSON or non-JSON line:", line);
-            }
+          const trimmedLine = line.trim();
+          // Skip empty lines and comment lines (starting with #)
+          if (!trimmedLine || trimmedLine.startsWith('#')) {
+            continue;
           }
+          try {
+            const json = JSON.parse(trimmedLine);
+            // Add source file info
+            const dataWithSource = { ...json, sourceFile: file.name };
+
+            // Capture report date if found and not already set
+            if (!reportDate && json.report_date) {
+              reportDate = json.report_date;
+            }
+
+            // Auto-save to DB
+            saveToDatabase(dataWithSource);
+            extractedCount++;
+          } catch (e) {
+            console.log("Partial JSON or non-JSON line:", trimmedLine);
+          }
+        }
+      }
+
+      // Process any remaining content in buffer after stream ends
+      if (buffer.trim() && !buffer.trim().startsWith('#')) {
+        try {
+          const json = JSON.parse(buffer.trim());
+          const dataWithSource = { ...json, sourceFile: file.name };
+          if (!reportDate && json.report_date) {
+            reportDate = json.report_date;
+          }
+          saveToDatabase(dataWithSource);
+          extractedCount++;
+        } catch (e) {
+          console.log("Final buffer not valid JSON:", buffer.trim());
         }
       }
 

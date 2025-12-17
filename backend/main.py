@@ -1,7 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from extractor import extract_text_from_pdf
+from extractor import extract_text_from_pdf_by_pages
 from llm_engine import get_llm_engine
 from database import init_db, save_metric, get_all_metrics, MetricData, save_processed_file, get_processed_files, ProcessedFileData
 import uvicorn
@@ -65,36 +65,61 @@ async def extract_health_data(file: UploadFile = File(...)):
     
     try:
         contents = await file.read()
-        text = extract_text_from_pdf(contents)
+        pages = extract_text_from_pdf_by_pages(contents)
         
-        if not text:
+        if not pages or not any(p.strip() for p in pages):
             return {"error": "Could not extract text from PDF. It might be an image-only PDF."}
         
         llm = get_llm_engine()
         
         # Generator function for StreamingResponse
-        # Generator function for StreamingResponse
         async def generate():
             # Acquire lock to ensure only one inference runs at a time
             async with llm_lock:
                 try:
-                    # Run the blocking generator in a thread pool to not block the event loop
-                    # We use anyio.to_thread.run_sync to run the next() call in a separate thread
                     from anyio import to_thread
                     
-                    iterator = llm.extract_health_parameters(text)
+                    # Group pages into chunks that fit within context limit
+                    # Each chunk should be under ~14000 chars to be safe
+                    MAX_CHUNK_SIZE = 14000
+                    chunks = []
+                    current_chunk = ""
                     
-                    while True:
-                        try:
-                            # This runs the blocking next(iterator) in a thread
-                            chunk = await to_thread.run_sync(next, iterator)
-                            yield chunk
-                        except StopIteration:
-                            break
-                        except Exception as e:
-                            print(f"ERROR during generation: {e}")
-                            yield f"\n\n[ERROR] Generation failed: {str(e)}"
-                            break
+                    for i, page_text in enumerate(pages):
+                        if len(current_chunk) + len(page_text) > MAX_CHUNK_SIZE:
+                            if current_chunk:
+                                chunks.append(current_chunk)
+                            current_chunk = page_text
+                        else:
+                            current_chunk += f"\n\n--- Page {i+1} ---\n\n" + page_text
+                    
+                    if current_chunk:
+                        chunks.append(current_chunk)
+                    
+                    print(f"Processing {len(pages)} pages in {len(chunks)} chunk(s)")
+                    
+                    # Process each chunk
+                    for chunk_idx, chunk_text in enumerate(chunks):
+                        if len(chunks) > 1:
+                            # Use # prefix so frontend treats this as a comment, not JSON
+                            yield f"# Processing chunk {chunk_idx + 1}/{len(chunks)}\n"
+                        
+                        iterator = llm.extract_health_parameters(chunk_text)
+                        
+                        while True:
+                            try:
+                                output = await to_thread.run_sync(next, iterator)
+                                yield output
+                            except StopIteration:
+                                break
+                            except Exception as e:
+                                print(f"ERROR during generation: {e}")
+                                yield f"\n\n[ERROR] Generation failed: {str(e)}"
+                                break
+                        
+                        # Add newline between chunks
+                        if chunk_idx < len(chunks) - 1:
+                            yield "\n"
                             
                 except Exception as e:
                     print(f"ERROR during streaming: {e}")

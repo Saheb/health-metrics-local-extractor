@@ -27,12 +27,10 @@ class LLMEngine:
         Yields chunks of data.
         """
         
-        # 8192 context - 2000 output - 500 prompt = ~5600 tokens for input
-        # 5600 tokens * 3.5 chars/token = ~19600 chars. 
-        # Let's be safe with 16000 chars to avoid context overflow.
+        # Text should already be chunked by main.py to fit context
+        # Just add a warning if it's still too long
         if len(text) > 16000:
-            print(f"Warning: Text length {len(text)} exceeds safe limit. Truncating to 16000 chars.")
-            text = text[:16000] + "... [TRUNCATED]"
+            print(f"Warning: Text length {len(text)} exceeds recommended limit.")
         
         # Construct a prompt for Mistral Instruct
         # Asking for JSON Lines (NDJSON) is easier to stream
