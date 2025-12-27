@@ -106,22 +106,71 @@ async def extract_health_data(file: UploadFile = File(...)):
                         
                         iterator = llm.extract_health_parameters(chunk_text)
                         
+                        # Buffer for accumulating partial lines
+                        buffer = ""
+                        
                         # Use sentinel pattern to avoid StopIteration in async generator
-                        # (Python 3.7+ treats StopIteration in generators/coroutines as error)
                         _sentinel = object()
                         
                         while True:
                             try:
-                                output = await to_thread.run_sync(
+                                output_chunk = await to_thread.run_sync(
                                     lambda it=iterator: next(it, _sentinel)
                                 )
-                                if output is _sentinel:
+                                if output_chunk is _sentinel:
                                     break
-                                yield output
+                                
+                                buffer += output_chunk
+                                
+                                # Process complete lines
+                                while '\n' in buffer:
+                                    line, buffer = buffer.split('\n', 1)
+                                    line = line.strip()
+                                    
+                                    if not line:
+                                        continue
+                                        
+                                    # Try to process as JSON
+                                    try:
+                                        import json
+                                        from services.reference_service import reference_service
+                                        
+                                        data = json.loads(line)
+                                        
+                                        # Inject reference range if missing
+                                        if "test_name" in data and ("reference_range" not in data or not data["reference_range"]):
+                                            ref_range = reference_service.get_reference_range(data["test_name"])
+                                            if ref_range:
+                                                data["reference_range"] = ref_range
+                                                # Mark as estimated/standard if needed? 
+                                                # For now just fill it transparently
+                                        
+                                        # Yield the potentially modified line
+                                        yield json.dumps(data) + "\n"
+                                        
+                                    except json.JSONDecodeError:
+                                        # If not JSON (e.g. comments/headers), yield as is if it looks useful
+                                        # or ignore if it's junk. The prompt says "No explanation", but safe to yield
+                                        yield line + "\n"
+                                        
                             except Exception as e:
                                 print(f"ERROR during generation: {e}")
                                 yield f"\n\n[ERROR] Generation failed: {str(e)}"
                                 break
+                        
+                        # Process any remaining buffer
+                        if buffer.strip():
+                            try:
+                                import json
+                                from services.reference_service import reference_service
+                                data = json.loads(buffer.strip())
+                                if "test_name" in data and ("reference_range" not in data or not data["reference_range"]):
+                                    ref_range = reference_service.get_reference_range(data["test_name"])
+                                    if ref_range:
+                                        data["reference_range"] = ref_range
+                                yield json.dumps(data) + "\n"
+                            except:
+                                yield buffer + "\n"
                         
                         # Add newline between chunks
                         if chunk_idx < len(chunks) - 1:

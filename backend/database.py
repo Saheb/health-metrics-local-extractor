@@ -29,6 +29,8 @@ TEST_NAME_MAPPINGS = {
     "VITAMIN D": "Vitamin D",
     "Vitamin D Total-25 Hydroxy": "Vitamin D",
     "25-OH Vitamin D (Total)": "Vitamin D",
+    "Creatinine, Serum": "Creatinine",
+    "Serum Creatinine": "Creatinine",
 }
 
 # Standardize unit spelling (case-insensitive lookup)
