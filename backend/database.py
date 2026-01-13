@@ -15,12 +15,19 @@ TEST_NAME_MAPPINGS = {
     "ERYTHROCYTE SEDIMENTATION RATE (ESR)": "ESR",
     "Erythrocyte Sedimentation Rate (Modified Westergren)": "ESR",
     "LDL Cholesterol,Direct": "LDL Cholesterol",
+    "LDL Cholesterol, Direct": "LDL Cholesterol",
+    "LDL-Cholesterol": "LDL Cholesterol",
+    "LDL.CHOL/HDL.CHOL Ratio": "LDL/HDL Ratio",
+    "LDL.CHOL/HDL.CHOL ratio": "LDL/HDL Ratio",
     "GLUCOSE, FASTING (F), PLASMA": "Fasting Glucose",
     "Glucose-Fasting": "Fasting Glucose",
+    "Plasma GLUCOSE - PP": "Post-Prandial Glucose",
     "Bilirubin - Direct": "Direct Bilirubin",
     "Bilirubin-Total": "Total Bilirubin",
     "Serum SGPT/ALT": "SGPT/ALT",
+    "ALT (SGPT)": "SGPT/ALT",
     "SGOT/AST": "SGOT/AST",
+    "AST (SGOT)": "SGOT/AST",
     "Serum Uric Acid": "Uric Acid",
     "Serium URIC ACID": "Uric Acid",
     "Serum Albumin": "Albumin",
@@ -31,6 +38,21 @@ TEST_NAME_MAPPINGS = {
     "25-OH Vitamin D (Total)": "Vitamin D",
     "Creatinine, Serum": "Creatinine",
     "Serum Creatinine": "Creatinine",
+    # WBC variations
+    "WBC Count (Coulter Principle)": "WBC Count",
+    "Total white cell count": "WBC Count",
+    "White Blood Cell Count": "WBC Count",
+    # Prothrombin Time variations
+    "Prothrombin Time (PT)": "Prothrombin Time",
+    "PT (Prothrombin Time)": "Prothrombin Time",
+    # RBC variations  
+    "RBC Count (Coulter Principle)": "RBC Count",
+    "Red Blood Cell Count": "RBC Count",
+    # Other common variations
+    "Red Cell Distribution Width - CV": "RDW-CV",
+    "Red Cell Distribution Width - SD": "RDW-SD",
+    "Albumin/Globulin Ratio": "A/G Ratio",
+    "A/G ratio": "A/G Ratio",
 }
 
 # Standardize unit spelling (case-insensitive lookup)
@@ -69,6 +91,14 @@ UNIT_CONVERSIONS = {
     # Glucose: mmol/L × 18.02 = mg/dL
     "Fasting Glucose": ("mmol/L", "mg/dL", 18.02),
     "Glucose": ("mmol/L", "mg/dL", 18.02),
+    "Post-Prandial Glucose": ("mmol/L", "mg/dL", 18.02),
+}
+
+# WBC/RBC unit conversions: cells/cumm, /cu.mm → 10^3/uL (divide by 1000)
+CELL_COUNT_CONVERSIONS = {
+    "WBC Count": {"from_units": ["cells/cumm", "/cu.mm", "cells/ul", "/uL"], "to_unit": "10^3/uL", "divisor": 1000},
+    "RBC Count": {"from_units": ["million/cumm", "10^6/cumm", "million/uL"], "to_unit": "10^6/uL", "divisor": 1},
+    "Platelet Count": {"from_units": ["cells/cumm", "/cu.mm", "lakh/cumm"], "to_unit": "10^3/uL", "divisor": 1000},
 }
 
 def normalize_date(date_str: Optional[str]) -> Optional[str]:
@@ -138,6 +168,15 @@ def normalize_unit(unit: str, test_name: str = None) -> tuple[str, float]:
         from_unit, to_unit, factor = UNIT_CONVERSIONS[test_name]
         if unit.lower() == from_unit.lower():
             return to_unit, factor
+    
+    # 3. Check cell count conversions (cells/cumm → 10^3/uL, etc.)
+    if test_name and test_name in CELL_COUNT_CONVERSIONS:
+        conversion = CELL_COUNT_CONVERSIONS[test_name]
+        unit_lower = unit.lower()
+        for from_unit in conversion["from_units"]:
+            if from_unit.lower() in unit_lower:
+                # Return to_unit and a divisor (as 1/divisor multiplier)
+                return conversion["to_unit"], 1.0 / conversion["divisor"]
     
     return normalized, 1.0
 

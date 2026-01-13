@@ -22,7 +22,7 @@ const TEST_DEFINITIONS = {
     "RBC Count": "Red Blood Cells carry oxygen. Abnormal levels can indicate anemia, dehydration, or other blood disorders."
 };
 
-const TrendView = () => {
+const TrendView = ({ initialSelectedTest }) => {
     const [metrics, setMetrics] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedTest, setSelectedTest] = useState('');
@@ -51,7 +51,11 @@ const TrendView = () => {
                     .sort((a, b) => counts[b] - counts[a]);
 
                 setAvailableTests(tests);
-                if (tests.length > 0) {
+
+                // Use initialSelectedTest if provided and exists in available tests
+                if (initialSelectedTest && tests.includes(initialSelectedTest)) {
+                    setSelectedTest(initialSelectedTest);
+                } else if (tests.length > 0) {
                     setSelectedTest(tests[0]);
                 } else {
                     setSelectedTest(''); // Reset if no tests match
@@ -62,7 +66,8 @@ const TrendView = () => {
                 console.error(err);
                 setLoading(false);
             });
-    }, []);
+    }, [initialSelectedTest]);
+
 
     // Helper to parse reference range
     const parseReferenceRange = (rangeStr) => {

@@ -163,5 +163,35 @@
     "unit": "mEq/L",
     "range": "96-106",
     "source": "NIH"
+  },
+  "Non-HDL Cholesterol": {
+    "unit": "mg/dL",
+    "range": "<130",
+    "source": "CDC"
+  },
+  "A/G Ratio": {
+    "unit": "Ratio",
+    "range": "1.2-2.5",
+    "source": "NIH"
+  },
+  "RDW-CV": {
+    "unit": "%",
+    "range": "11.5-14.5",
+    "source": "NIH"
+  },
+  "Post-Prandial Glucose": {
+    "unit": "mg/dL",
+    "range": "70-140",
+    "source": "ADA"
+  },
+  "Prothrombin Time": {
+    "unit": "seconds",
+    "range": "11.0-13.5",
+    "source": "NIH"
+  },
+  "LDL/HDL Ratio": {
+    "unit": "Ratio",
+    "range": "<3.0",
+    "source": "CDC"
   }
 }

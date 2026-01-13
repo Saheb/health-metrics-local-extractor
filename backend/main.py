@@ -58,6 +58,121 @@ async def record_file_processing_endpoint(data: ProcessedFileData):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/alerts")
+async def get_alerts_endpoint():
+    """
+    Analyze all metrics and return those outside normal reference ranges.
+    Returns the latest reading for each test with status (high/low/normal) and deviation.
+    """
+    import json
+    import re
+    from pathlib import Path
+    
+    try:
+        metrics = get_all_metrics()
+        
+        # Load standard ranges as fallback
+        standard_ranges_path = Path(__file__).parent / "data" / "standard_ranges.json"
+        standard_ranges = {}
+        if standard_ranges_path.exists():
+            with open(standard_ranges_path, "r") as f:
+                standard_ranges = json.load(f)
+        
+        # Group by test name, get the most recent reading for each
+        latest_by_test = {}
+        for metric in metrics:
+            test_name = metric.get("test_name")
+            if not test_name:
+                continue
+            
+            report_date = metric.get("report_date") or ""
+            existing_date = latest_by_test.get(test_name, {}).get("report_date") or ""
+            if test_name not in latest_by_test or report_date > existing_date:
+                latest_by_test[test_name] = metric
+        
+        def parse_reference_range(range_str):
+            """Parse reference range string to min/max values."""
+            if not range_str:
+                return None, None
+            
+            clean = str(range_str).strip().lower()
+            
+            # Handle "min-max" (e.g. "13.5-17.5")
+            range_match = re.match(r"([\d.]+)\s*-\s*([\d.]+)", clean)
+            if range_match:
+                return float(range_match.group(1)), float(range_match.group(2))
+            
+            # Handle "< max" (e.g. "< 200")
+            if "<" in clean:
+                match = re.search(r"[\d.]+", clean)
+                if match:
+                    return None, float(match.group())
+            
+            # Handle "> min" (e.g. "> 50")
+            if ">" in clean:
+                match = re.search(r"[\d.]+", clean)
+                if match:
+                    return float(match.group()), None
+            
+            return None, None
+        
+        alerts = []
+        
+        for test_name, metric in latest_by_test.items():
+            value = metric.get("value")
+            if value is None:
+                continue
+            
+            # Try to parse value as number
+            try:
+                num_value = float(value)
+            except (ValueError, TypeError):
+                continue
+            
+            # Get reference range - prefer metric's own range, fallback to standard
+            ref_range = metric.get("reference_range")
+            unit = metric.get("unit", "")
+            
+            if not ref_range and test_name in standard_ranges:
+                ref_range = standard_ranges[test_name].get("range")
+                if not unit:
+                    unit = standard_ranges[test_name].get("unit", "")
+            
+            if not ref_range:
+                continue
+            
+            ref_min, ref_max = parse_reference_range(ref_range)
+            
+            # Determine status
+            status = "normal"
+            deviation = 0
+            
+            if ref_max is not None and num_value > ref_max:
+                status = "high"
+                deviation = round(((num_value - ref_max) / ref_max) * 100, 1) if ref_max != 0 else 0
+            elif ref_min is not None and num_value < ref_min:
+                status = "low"
+                deviation = round(((ref_min - num_value) / ref_min) * 100, 1) if ref_min != 0 else 0
+            
+            if status != "normal":
+                alerts.append({
+                    "test_name": test_name,
+                    "value": value,
+                    "unit": unit,
+                    "reference_range": ref_range,
+                    "status": status,
+                    "deviation": deviation,
+                    "report_date": metric.get("report_date", "")
+                })
+        
+        # Sort by deviation (highest first)
+        alerts.sort(key=lambda x: x["deviation"], reverse=True)
+        
+        return alerts
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/extract")
 async def extract_health_data(file: UploadFile = File(...)):
     if not file.filename.endswith(".pdf"):

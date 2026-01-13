@@ -4,9 +4,11 @@ import SavedMetrics from './components/SavedMetrics';
 import TrendView from './components/TrendView';
 import FileProgress from './components/FileProgress';
 import FileHistory from './components/FileHistory';
+import Dashboard from './components/Dashboard';
 import './App.css';
 
 const VIEW_MODES = {
+  DASHBOARD: 'dashboard',
   UPLOAD: 'upload',
   DATABASE: 'database',
   TRENDS: 'trends',
@@ -14,7 +16,8 @@ const VIEW_MODES = {
 };
 
 function App() {
-  const [view, setView] = useState(VIEW_MODES.UPLOAD);
+  const [view, setView] = useState(VIEW_MODES.DASHBOARD);
+  const [selectedTestForTrend, setSelectedTestForTrend] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [autoSaveStatus, setAutoSaveStatus] = useState('');
@@ -232,6 +235,13 @@ function App() {
         <div className="nav-buttons" style={{ marginTop: '1rem', display: 'flex', gap: '1rem', justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap' }}>
           <button
             type="button"
+            className={`nav-btn ${view === VIEW_MODES.DASHBOARD ? 'active' : ''}`}
+            onClick={() => setView(VIEW_MODES.DASHBOARD)}
+          >
+            ⚠️ Dashboard
+          </button>
+          <button
+            type="button"
             className={`nav-btn ${view === VIEW_MODES.UPLOAD ? 'active' : ''}`}
             onClick={() => setView(VIEW_MODES.UPLOAD)}
           >
@@ -247,7 +257,7 @@ function App() {
           <button
             type="button"
             className={`nav-btn ${view === VIEW_MODES.TRENDS ? 'active' : ''}`}
-            onClick={() => setView(VIEW_MODES.TRENDS)}
+            onClick={() => { setSelectedTestForTrend(null); setView(VIEW_MODES.TRENDS); }}
           >
             📈 View Trends
           </button>
@@ -262,6 +272,15 @@ function App() {
       </header>
 
       <main className="app-main">
+        {view === VIEW_MODES.DASHBOARD && (
+          <Dashboard
+            onNavigateToTrends={(testName) => {
+              setSelectedTestForTrend(testName);
+              setView(VIEW_MODES.TRENDS);
+            }}
+          />
+        )}
+
         {view === VIEW_MODES.UPLOAD && (
           <div className="upload-view">
             <FileUpload onUpload={handleUpload} isLoading={isLoading} />
@@ -275,7 +294,7 @@ function App() {
         )}
 
         {view === VIEW_MODES.TRENDS && (
-          <TrendView />
+          <TrendView initialSelectedTest={selectedTestForTrend} />
         )}
 
         {view === VIEW_MODES.HISTORY && (
