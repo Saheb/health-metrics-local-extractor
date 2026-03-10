@@ -106,3 +106,46 @@ def _extract_text_ocr_by_pages(pdf_bytes: bytes) -> list[str]:
     except Exception as e:
         print(f"Error in OCR extraction: {e}")
         return []
+
+def extract_text_from_image(image_bytes: bytes) -> list[str]:
+    """
+    Extracts text from an image file using OCR.
+    Applies preprocessing and multi-pass OCR for better accuracy on complex layouts.
+    """
+    try:
+        from PIL import Image, ImageOps, ImageEnhance, ImageFilter
+        import pytesseract
+        import io
+        
+        # Load image
+        img = Image.open(io.BytesIO(image_bytes))
+        
+        # 1. Preprocessing for better OCR
+        # Convert to grayscale
+        gray = ImageOps.grayscale(img)
+        
+        # Enhance contrast
+        enhancer = ImageEnhance.Contrast(gray)
+        contrast = enhancer.enhance(2.0)
+        
+        # Sharpen
+        sharp = contrast.filter(ImageFilter.SHARPEN)
+        
+        # 2. Multi-pass OCR
+        # Pass 1: Standard Auto (PSM 3)
+        text1 = pytesseract.image_to_string(sharp, lang='eng', config='--psm 3')
+        
+        # Pass 2: Sparse Text (PSM 11) - Good for labels and values separated in space
+        text2 = pytesseract.image_to_string(sharp, lang='eng', config='--psm 11')
+        
+        # Combine results, ensuring we don't return only whitespace
+        combined_text = text1.strip() + "\n\n--- OCR Pass 2 (Sparse) ---\n\n" + text2.strip()
+        
+        return [combined_text] if combined_text.strip() else [""]
+        
+    except ImportError as e:
+        print(f"OCR dependencies not installed: {e}")
+        return [""]
+    except Exception as e:
+        print(f"Error in image extraction: {e}")
+        return [""]

@@ -48,6 +48,15 @@ TEST_NAME_MAPPINGS = {
     # RBC variations  
     "RBC Count (Coulter Principle)": "RBC Count",
     "Red Blood Cell Count": "RBC Count",
+    # Thyroid / Hormone variations
+    "fT3": "Free T3",
+    "Free T-3": "Free T3",
+    "fT4": "Free T4",
+    "Free T-4": "Free T4",
+    "Testosterone Free": "Free Testosterone",
+    "Testosterone, Free": "Free Testosterone",
+    "Testosterone Total": "Total Testosterone",
+    "Testosterone, Total": "Total Testosterone",
     # Other common variations
     "Red Cell Distribution Width - CV": "RDW-CV",
     "Red Cell Distribution Width - SD": "RDW-SD",
@@ -65,15 +74,34 @@ UNIT_MAPPINGS = {
     "gm/dl": "g/dL",
     "gm/dL": "g/dL",
     "g/dl": "g/dL",
+    "gm%": "g/dL",
     "mm/hr": "mm/h",
     "mm/1sthour": "mm/h",
+    "mm/1st hr.": "mm/h",
+    "mm/1st hour": "mm/h",
     "ng/ml": "ng/mL",
     "pg/ml": "pg/mL",
     "ug/dl": "µg/dL",
+    "ug/dL": "µg/dL",
+    "µg/dl": "µg/dL",
     "µiu/ml": "µIU/mL",
     "µiu/mL": "µIU/mL",
     "kg/m^2": "kg/m²",
     "kg/m2": "kg/m²",
+    "fl": "fL",
+    "pg": "pg",
+    "ratio": "Ratio",
+    "millions/cumm": "10^6/uL",
+    "10^6/uL": "10^6/uL",
+    "10^6/µl": "10^6/uL",
+    "mill/cu.mm": "10^6/uL",
+    "million/cu.mm": "10^6/uL",
+    "10^12/L": "10^6/uL",
+    "10^9/L": "10^3/uL",
+    "/cu mm": "10^3/uL",
+    "/cu.mm": "10^3/uL",
+    "10^3/µl": "10^3/uL",
+    "10^3/ul": "10^3/uL",
 }
 
 # Unit conversions: (from_unit, to_unit, multiplier)
@@ -92,6 +120,10 @@ UNIT_CONVERSIONS = {
     "Fasting Glucose": ("mmol/L", "mg/dL", 18.02),
     "Glucose": ("mmol/L", "mg/dL", 18.02),
     "Post-Prandial Glucose": ("mmol/L", "mg/dL", 18.02),
+    # Testosterone: ng/mL * 100 = ng/dL
+    "Total Testosterone": ("ng/mL", "ng/dL", 100.0),
+    # Testosterone: nmol/L * 28.8 = ng/dL
+    "Testosterone": ("nmol/L", "ng/dL", 28.8),
 }
 
 # WBC/RBC unit conversions: cells/cumm, /cu.mm → 10^3/uL (divide by 1000)
@@ -109,17 +141,23 @@ def normalize_date(date_str: Optional[str]) -> Optional[str]:
     if not date_str:
         return None
     
+    date_str = date_str.strip()
+    import re
+    
+    # If the LLM already output a perfect ISO date (YYYY-MM-DD), 
+    # don't let dayfirst=True ruin it by flipping month and day!
+    if re.match(r'^\d{4}-\d{2}-\d{2}$', date_str):
+        try:
+            dt = parser.parse(date_str, yearfirst=True, dayfirst=False)
+            return dt.strftime("%Y-%m-%d")
+        except:
+            pass
+            
     try:
         # Parse the date string
         dt = parser.parse(date_str, dayfirst=True) # Assume day comes first for ambiguous dates like 01/02/2023 (common in medical reports)
         return dt.strftime("%Y-%m-%d")
     except (ValueError, TypeError):
-        # If parsing fails, return the original string or None?
-        # Returning original string might preserve bad data but avoids data loss.
-        # Returning None cleans it but loses info.
-        # Let's return original string if it looks somewhat like a date, or just return it as is.
-        # Actually, if we want to deduplicate, we need consistent format.
-        # If we can't parse it, we can't normalize it.
         return date_str
 
 def normalize_test_name(name: str) -> str:
@@ -160,19 +198,31 @@ def normalize_unit(unit: str, test_name: str = None) -> tuple[str, float]:
     
     unit = unit.strip()
     
-    # 1. Standardize spelling first
-    normalized = UNIT_MAPPINGS.get(unit, unit)
+    # 1. Strip leading/trailing flags (H, L, *, High, Low, etc.)
+    import re
+    # Match common flags followed/preceded by potential units
+    # e.g. "H mg/dL", "mg/dL (High)", "* 10^3/uL"
+    unit = re.sub(r'^(H|L|\*|High|Low)\s+', '', unit, flags=re.IGNORECASE)
+    unit = re.sub(r'\s+\(?(High|Low|H|L|\*)\)?$', '', unit, flags=re.IGNORECASE)
+    unit = unit.strip()
+
+    # 2. Standardize spelling/casing
+    # Check lowercase first for widest match
+    normalized = UNIT_MAPPINGS.get(unit.lower(), unit)
+    # If not found, check exact
+    if normalized == unit:
+        normalized = UNIT_MAPPINGS.get(unit, unit)
     
-    # 2. Check if we need to convert units (e.g., mmol/L to mg/dL)
+    # 3. Check if we need to convert units (e.g., mmol/L to mg/dL)
     if test_name and test_name in UNIT_CONVERSIONS:
         from_unit, to_unit, factor = UNIT_CONVERSIONS[test_name]
-        if unit.lower() == from_unit.lower():
+        if normalized.lower() == from_unit.lower():
             return to_unit, factor
     
-    # 3. Check cell count conversions (cells/cumm → 10^3/uL, etc.)
+    # 4. Check cell count conversions (cells/cumm → 10^3/uL, etc.)
     if test_name and test_name in CELL_COUNT_CONVERSIONS:
         conversion = CELL_COUNT_CONVERSIONS[test_name]
-        unit_lower = unit.lower()
+        unit_lower = normalized.lower()
         for from_unit in conversion["from_units"]:
             if from_unit.lower() in unit_lower:
                 # Return to_unit and a divisor (as 1/divisor multiplier)
@@ -234,6 +284,30 @@ def normalize_reference_range(ref_range: str) -> str:
     ref = re.sub(r'\s+', ' ', ref).strip()
     
     return ref
+
+def scale_reference_range(ref_range: str, factor: float) -> str:
+    """
+    Finds all numbers in a reference range string and multiplies them by factor.
+    e.g., scale_reference_range("2.8-8.0", 100.0) -> "280-800"
+    """
+    import re
+    if not ref_range or factor == 1.0:
+        return ref_range
+        
+    def replace_func(match):
+        num_str = match.group(0)
+        try:
+            num = float(num_str)
+            new_num = num * factor
+            # If it's a whole number, don't show .0
+            if new_num == int(new_num):
+                return str(int(new_num))
+            return str(round(new_num, 2))
+        except:
+            return num_str
+            
+    # Regex to find numbers (including decimals)
+    return re.sub(r'(\d+(\.\d+)?)', replace_func, ref_range)
 
 def init_db():
     conn = sqlite3.connect(DB_NAME)
@@ -339,6 +413,11 @@ def save_metric(metric: MetricData):
     # Ensure value and reference_range are strings, and normalize reference_range
     value_str = str(value) if value is not None else None
     ref_range_str = normalize_reference_range(str(metric.reference_range)) if metric.reference_range is not None else None
+    
+    # Scale reference range if conversion factor was applied
+    if conversion_factor != 1.0 and ref_range_str:
+        ref_range_str = scale_reference_range(ref_range_str, conversion_factor)
+        print(f"Scaled reference range for {test_name}: {ref_range_str}")
 
     # Auto-fill missing reference ranges from existing data
     if not ref_range_str or ref_range_str == '':

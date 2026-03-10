@@ -14,12 +14,14 @@ echo ""
 echo "📦 Starting Backend (FastAPI)..."
 cd "$SCRIPT_DIR/backend"
 
-# Check if venv exists
-if [ ! -d "venv" ]; then
-    echo "⚠️  Virtual environment not found. Creating one..."
-    python3 -m venv venv
-    source venv/bin/activate
-    pip install -r requirements.txt
+# Check if venv or .venv exists
+if [ ! -d ".venv" ] && [ ! -d "venv" ]; then
+    echo "⚠️  Virtual environment not found. Creating one with uv..."
+    uv venv
+    source .venv/bin/activate
+    uv pip install -r requirements.txt
+elif [ -d ".venv" ]; then
+    source .venv/bin/activate
 else
     source venv/bin/activate
 fi
@@ -45,7 +47,7 @@ if [ ! -d "node_modules" ]; then
 fi
 
 # Start frontend in background
-npm run dev &
+npm run dev -- --host &
 FRONTEND_PID=$!
 echo "✅ Frontend started (PID: $FRONTEND_PID)"
 

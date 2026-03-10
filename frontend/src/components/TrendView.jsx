@@ -30,7 +30,7 @@ const TrendView = ({ initialSelectedTest }) => {
     const [testCounts, setTestCounts] = useState({});
 
     useEffect(() => {
-        fetch('http://localhost:8000/metrics')
+        fetch('/api/metrics')
             .then(res => res.json())
             .then(data => {
                 setMetrics(data);

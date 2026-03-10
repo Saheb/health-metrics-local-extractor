@@ -1,9 +1,10 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from extractor import extract_text_from_pdf_by_pages
+from extractor import extract_text_from_pdf_by_pages, extract_text_from_image
 from llm_engine import get_llm_engine
 from database import init_db, save_metric, get_all_metrics, MetricData, save_processed_file, get_processed_files, ProcessedFileData
+from pydantic import BaseModel
 import uvicorn
 
 import asyncio
@@ -55,6 +56,32 @@ async def record_file_processing_endpoint(data: ProcessedFileData):
     try:
         save_processed_file(data)
         return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class ModelSelectRequest(BaseModel):
+    model_name: str
+
+@app.get("/models")
+async def get_models_endpoint():
+    from llm_engine import get_available_models, get_llm_engine
+    try:
+        engine = get_llm_engine()
+        return {
+            "available_models": get_available_models(),
+            "active_model": engine.active_model_name if engine else None
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/models/select")
+async def select_model_endpoint(request: ModelSelectRequest):
+    from llm_engine import switch_active_model
+    try:
+        active_model = switch_active_model(request.model_name)
+        return {"status": "success", "active_model": active_model}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -175,15 +202,23 @@ async def get_alerts_endpoint():
 
 @app.post("/extract")
 async def extract_health_data(file: UploadFile = File(...)):
-    if not file.filename.endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="File must be a PDF")
+    filename = file.filename.lower()
+    is_pdf = filename.endswith(".pdf")
+    is_image = filename.endswith((".jpg", ".jpeg", ".png", ".webp"))
+    
+    if not (is_pdf or is_image):
+        raise HTTPException(status_code=400, detail="File must be a PDF or Image (JPG/PNG/WEBP)")
     
     try:
         contents = await file.read()
-        pages = extract_text_from_pdf_by_pages(contents)
         
+        if is_pdf:
+            pages = extract_text_from_pdf_by_pages(contents)
+        else:
+            pages = extract_text_from_image(contents)
+            
         if not pages or not any(p.strip() for p in pages):
-            return {"error": "Could not extract text from PDF. It might be an image-only PDF."}
+            return {"error": "Could not extract text from file. Please ensure it is legible."}
         
         llm = get_llm_engine()
         
@@ -219,7 +254,9 @@ async def extract_health_data(file: UploadFile = File(...)):
                             # Use # prefix so frontend treats this as a comment, not JSON
                             yield f"# Processing chunk {chunk_idx + 1}/{len(chunks)}\n"
                         
-                        iterator = llm.extract_health_parameters(chunk_text)
+                        # Only pass filename as context for images, not PDFs
+                        filename_context = filename if is_image else None
+                        iterator = llm.extract_health_parameters(chunk_text, filename=filename_context)
                         
                         # Buffer for accumulating partial lines
                         buffer = ""

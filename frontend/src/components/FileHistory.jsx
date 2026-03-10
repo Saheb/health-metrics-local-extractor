@@ -9,7 +9,7 @@ const FileHistory = () => {
     }, []);
 
     const fetchHistory = () => {
-        fetch('http://localhost:8000/history')
+        fetch('/api/history')
             .then(res => res.json())
             .then(data => {
                 setHistory(data);

@@ -22,6 +22,44 @@ function App() {
   const [error, setError] = useState(null);
   const [autoSaveStatus, setAutoSaveStatus] = useState('');
   const [fileStatuses, setFileStatuses] = useState([]);
+  const [availableModels, setAvailableModels] = useState([]);
+  const [activeModel, setActiveModel] = useState('');
+  const [isModelLoading, setIsModelLoading] = useState(false);
+
+  useEffect(() => {
+    // Fetch available models on load
+    fetch('/api/models')
+      .then(res => res.json())
+      .then(data => {
+        setAvailableModels(data.available_models || []);
+        setActiveModel(data.active_model || '');
+      })
+      .catch(err => console.error("Failed to fetch models:", err));
+  }, []);
+
+  const handleModelChange = async (e) => {
+    const newModel = e.target.value;
+    setIsModelLoading(true);
+
+    try {
+      const response = await fetch('/api/models/select', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model_name: newModel })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setActiveModel(data.active_model);
+      } else {
+        console.error("Failed to switch model");
+      }
+    } catch (err) {
+      console.error("Error switching model:", err);
+    } finally {
+      setIsModelLoading(false);
+    }
+  };
 
   const handleUpload = async (fileList) => {
     setIsLoading(true);
@@ -54,7 +92,7 @@ function App() {
     formData.append('file', file);
 
     try {
-      const response = await fetch('http://localhost:8000/extract', {
+      const response = await fetch('/api/extract', {
         method: 'POST',
         body: formData,
       });
@@ -130,20 +168,31 @@ function App() {
         }
       }
 
+      // First pass: Find the report date if it exists anywhere in the extracted objects
+      let foundDate = null;
+      for (const obj of extractedObjects) {
+        if (obj.report_date && obj.report_date !== 'null' && obj.report_date !== '') {
+          foundDate = obj.report_date;
+          break;
+        }
+      }
+
+      if (foundDate) {
+        reportDate = foundDate;
+      }
+
       // Process extracted objects
       for (const json of extractedObjects) {
         // VALIDATION: Skip entries without valid values (prevents hallucinated data)
-        // Value must exist and be a non-empty number or numeric string
         const value = json.value;
         if (value === null || value === undefined || value === '' || value === 'null') {
           console.log(`Skipping entry without value: ${json.test_name}`);
           continue;
         }
 
-        // Check if value is numeric (allows strings like "4.2" or numbers like 4.2)
+        // Check if value is numeric
         const numericValue = parseFloat(value);
         if (isNaN(numericValue)) {
-          // Allow some non-numeric values like "Negative", "Positive", "Normal", etc.
           const allowedNonNumeric = ['negative', 'positive', 'normal', 'nil', 'absent', 'present', 'trace', 'male', 'female'];
           if (!allowedNonNumeric.includes(String(value).toLowerCase())) {
             console.log(`Skipping entry with non-numeric value: ${json.test_name} = ${value}`);
@@ -151,13 +200,13 @@ function App() {
           }
         }
 
+        // Inject the globally found reportDate if this specific object doesn't have it
+        if (!json.report_date && reportDate) {
+          json.report_date = reportDate;
+        }
+
         // Add source file info
         const dataWithSource = { ...json, sourceFile: file.name };
-
-        // Capture report date if found and not already set
-        if (!reportDate && json.report_date) {
-          reportDate = json.report_date;
-        }
 
         // Auto-save to DB
         saveToDatabase(dataWithSource);
@@ -167,7 +216,7 @@ function App() {
       console.log(`Extracted ${extractedCount} data points from ${file.name}`);
 
       // Record file processing result
-      await fetch('http://localhost:8000/record_file_processing', {
+      await fetch('/api/record_file_processing', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -189,7 +238,7 @@ function App() {
       console.error("Error processing file:", file.name, err);
 
       // Record failure
-      await fetch('http://localhost:8000/record_file_processing', {
+      await fetch('/api/record_file_processing', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -211,7 +260,7 @@ function App() {
   const saveToDatabase = async (data) => {
     try {
       setAutoSaveStatus('Saving...');
-      const response = await fetch('http://localhost:8000/save', {
+      const response = await fetch('/api/save', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -232,6 +281,34 @@ function App() {
     <div className="app-container">
       <header className="app-header">
         <h1>Health Metrics Extractor</h1>
+
+        {availableModels.length > 0 && (
+          <div style={{ marginTop: '0.5rem', marginBottom: '1.5rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem' }}>
+            <label style={{ fontSize: '0.9rem', color: '#64748b' }}>AI Model:</label>
+            <select
+              value={activeModel}
+              onChange={handleModelChange}
+              disabled={isModelLoading || isLoading}
+              style={{
+                padding: '0.3rem 0.5rem',
+                borderRadius: '0.3rem',
+                border: '1px solid #cbd5e1',
+                fontSize: '0.85rem',
+                color: '#334155',
+                background: '#f8fafc',
+                cursor: (isModelLoading || isLoading) ? 'not-allowed' : 'pointer',
+                maxWidth: '250px',
+                textOverflow: 'ellipsis'
+              }}
+            >
+              {availableModels.map(model => (
+                <option key={model} value={model}>{model}</option>
+              ))}
+            </select>
+            {isModelLoading && <span style={{ fontSize: '0.8rem', color: '#2563eb' }}>Loading...</span>}
+          </div>
+        )}
+
         <div className="nav-buttons" style={{ marginTop: '1rem', display: 'flex', gap: '1rem', justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap' }}>
           <button
             type="button"

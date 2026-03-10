@@ -55,7 +55,7 @@ const Dashboard = ({ onNavigateToTrends }) => {
     const [expandedCategories, setExpandedCategories] = useState(new Set());
 
     useEffect(() => {
-        fetch('http://localhost:8000/alerts')
+        fetch('/api/alerts')
             .then(res => {
                 if (!res.ok) throw new Error('Failed to fetch alerts');
                 return res.json();

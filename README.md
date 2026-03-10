@@ -8,14 +8,16 @@ A private, offline-first web application that extracts health metrics from PDF m
 
 ### Core
 *   **Offline & Private**: All processing happens locally on your machine. No data leaves your computer.
-*   **PDF Extraction**: Upload PDF medical reports to extract structured data (Test Name, Value, Unit, Reference Range, Date).
-*   **OCR Support**: Automatically uses OCR for scanned PDFs when text extraction fails.
-*   **Local LLM**: Powered by `Mistral-7B-Instruct` running via `llama-cpp-python`.
-*   **Database Storage**: Automatically saves extracted metrics to a local SQLite database (`health_metrics.db`).
+*   **PDF & Image Extraction**: Upload PDF medical reports or Images (`.jpg`, `.png`, `.webp`) to extract structured data (Test Name, Value, Unit, Reference Range, Date).
+*   **Dynamic Model Selection**: Hot-swap between different LLM models (e.g., Llama 3.1, Mistral) directly from the UI dropdown without restarting.
+*   **Fitness & Body Composition**: Specifically tuned to extract values from gym machines like InBody (Weight, BMI, Muscle %, Fat %, Hydration %, BMR).
+*   **Mobile Access Ready**: View your health dashboard securely on your phone via your local Wi-Fi network.
+*   **OCR Support**: Enhanced multi-pass OCR with image preprocessing for handling complex graphical layouts and sparse text.
+*   **Smart Date Extraction**: Automatically extracts report dates from text, with a fallback to the filename if a date pattern is detected in the file title.
 
 ### Data Quality & Normalization  
 *   **Test Name Standardization**: Merges variations like "Vitamin D Total", "25-OH Vitamin D" → "Vitamin D".
-*   **Unit Normalization**: Standardizes units (e.g., `mg/dl` → `mg/dL`) and converts between systems (mmol/L → mg/dL for cholesterol).
+*   **Unit & Scale Normalization**: Standardizes units (e.g., `mg/dl` → `mg/dL`) and automatically scales **Reference Ranges** to match value conversions (e.g., `ng/mL` → `ng/dL` for Testosterone).
 *   **Reference Range Cleanup**: Removes redundant units, normalizes formatting (`<200.00 mg/dL` → `<200`).
 *   **Auto-fill Reference Ranges**: Missing reference ranges are automatically populated from previous readings of the same test.
 *   **Anti-Hallucination**: Validates LLM output to prevent fake/invented values from being saved.
@@ -27,8 +29,9 @@ A private, offline-first web application that extracts health metrics from PDF m
 ## Tech Stack
 
 *   **Backend**: Python, FastAPI, Llama.cpp, SQLite
+*   **OCR**: Tesseract with Pillow/ImageFilter preprocessing
 *   **Frontend**: React, Vite, Recharts
-*   **AI Model**: Mistral-7B-Instruct-v0.2 (GGUF format)
+*   **Supported Models**: Llama-3.1-8B-Instruct, Mistral-7B-Instruct-v0.2 (GGUF quantized)
 
 ## Setup
 
@@ -58,6 +61,8 @@ This will automatically:
 
 Then open **http://localhost:5173** in your browser.
 
+> **Mobile Access:** The script now automatically runs Vite with the `--host` flag. Look at your terminal output for the `Network:` URL (e.g., `http://192.168.x.x:5173/`). You can open this specific URL on your mobile phone to view your private health dashboard remotely, as long as you are connected to the same Wi-Fi network!
+
 > Press `Ctrl+C` to stop both servers gracefully.
 
 ---
@@ -70,9 +75,9 @@ If you prefer to run the servers separately:
 
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
+uv venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+uv pip install -r requirements.txt
 ```
 
 **Download the Model:**

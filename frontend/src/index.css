@@ -32,6 +32,7 @@ body {
   margin-bottom: 0.5rem;
   background: linear-gradient(to right, #2563eb, #60a5fa);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
@@ -604,5 +605,44 @@ tr:last-child td {
   to {
     transform: translateY(0);
     opacity: 1;
+  }
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 640px) {
+  .app-container {
+    padding: 1rem 0.5rem;
+  }
+
+  .app-header h1 {
+    font-size: 1.75rem;
+  }
+
+  .results-container,
+  .dashboard-container {
+    padding: 1rem;
+  }
+
+  .upload-form {
+    padding: 1.5rem 1rem;
+  }
+
+  .nav-btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+  }
+
+  th,
+  td {
+    padding: 0.75rem 0.5rem;
+    font-size: 0.85rem;
+  }
+
+  .dashboard-title {
+    font-size: 1.35rem;
+  }
+
+  .alert-card {
+    padding: 1rem;
   }
 }

@@ -35,7 +35,7 @@ const FileUpload = ({ onUpload, isLoading }) => {
       while (queue.length > 0) {
         const entry = queue.shift();
         if (entry.isFile) {
-          if (entry.name.toLowerCase().endsWith('.pdf')) {
+          if (entry.name.toLowerCase().match(/\.(pdf|jpe?g|png|webp)$/i)) {
             const file = await new Promise((resolve) => {
               entry.file((f) => resolve(f));
             });
@@ -57,7 +57,7 @@ const FileUpload = ({ onUpload, isLoading }) => {
       }
     } else if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       // Fallback for browsers not supporting webkitGetAsEntry (non-recursive)
-      onUpload(Array.from(e.dataTransfer.files).filter(f => f.name.toLowerCase().endsWith('.pdf')));
+      onUpload(Array.from(e.dataTransfer.files).filter(f => f.name.toLowerCase().match(/\.(pdf|jpe?g|png|webp)$/i)));
     }
   };
 
@@ -81,7 +81,7 @@ const FileUpload = ({ onUpload, isLoading }) => {
         <input
           type="file"
           id="file-upload"
-          accept=".pdf"
+          accept=".pdf, image/*"
           multiple
           onChange={handleChange}
           disabled={isLoading}
@@ -104,7 +104,7 @@ const FileUpload = ({ onUpload, isLoading }) => {
           ) : (
             <>
               <div className="upload-icon">📄</div>
-              <p>Drag & Drop your PDF reports or Folders here</p>
+              <p>Drag & Drop your PDF reports, Images, or Folders here</p>
               <div className="upload-actions">
                 <label htmlFor="file-upload" className="upload-btn">
                   Browse Files
