@@ -20,3 +20,5 @@ backend/models/
 
 # Logs
 *.log
+
+fitbit_tokens.json

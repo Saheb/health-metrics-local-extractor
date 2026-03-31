@@ -5,6 +5,7 @@ import TrendView from './components/TrendView';
 import FileProgress from './components/FileProgress';
 import FileHistory from './components/FileHistory';
 import Dashboard from './components/Dashboard';
+import FitbitIntegration from './components/FitbitIntegration';
 import './App.css';
 
 const VIEW_MODES = {
@@ -12,7 +13,8 @@ const VIEW_MODES = {
   UPLOAD: 'upload',
   DATABASE: 'database',
   TRENDS: 'trends',
-  HISTORY: 'history'
+  HISTORY: 'history',
+  INTEGRATIONS: 'integrations'
 };
 
 function App() {
@@ -345,6 +347,13 @@ function App() {
           >
             🕒 File History
           </button>
+          <button
+            type="button"
+            className={`nav-btn ${view === VIEW_MODES.INTEGRATIONS ? 'active' : ''}`}
+            onClick={() => setView(VIEW_MODES.INTEGRATIONS)}
+          >
+            🔌 Integrations
+          </button>
         </div>
       </header>
 
@@ -376,6 +385,10 @@ function App() {
 
         {view === VIEW_MODES.HISTORY && (
           <FileHistory />
+        )}
+
+        {view === VIEW_MODES.INTEGRATIONS && (
+          <FitbitIntegration />
         )}
       </main>
 

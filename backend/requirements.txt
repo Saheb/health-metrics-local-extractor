@@ -7,3 +7,5 @@ pypdf
 pdf2image
 pytesseract
 Pillow
+requests
+python-dotenv

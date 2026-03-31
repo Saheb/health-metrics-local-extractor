@@ -337,5 +337,39 @@ async def extract_health_data(file: UploadFile = File(...)):
         print(f"Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/fitbit/status")
+async def fitbit_status_endpoint():
+    from fitbit_api import load_tokens, get_auth_url
+    try:
+        tokens = load_tokens()
+        return {
+            "connected": tokens is not None,
+            "auth_url": get_auth_url()
+        }
+    except Exception as e:
+        return {"connected": False, "auth_url": "", "error": str(e)}
+
+@app.get("/fitbit/callback")
+async def fitbit_callback_endpoint(code: str):
+    from fitbit_api import handle_callback
+    try:
+        handle_callback(code)
+        from fastapi.responses import HTMLResponse
+        return HTMLResponse("<html><body><h1>Fitbit connection successful!</h1><p>You can close this tab and return to the app.</p></body></html>")
+    except Exception as e:
+        print(f"Fitbit callback error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/fitbit/pull")
+async def fitbit_pull_endpoint():
+    from fitbit_api import manual_sync_all
+    try:
+        result = manual_sync_all()
+        return {"status": "success", "data": result}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

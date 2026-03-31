@@ -19,13 +19,24 @@ const TEST_DEFINITIONS = {
     "Uric Acid": "A waste product in the blood. High levels can lead to gout (a type of arthritis) or kidney stones.",
     "Platelet Count": "Tiny blood cells that help your blood clot. Low levels can cause bleeding risks, while high levels can lead to clotting issues.",
     "WBC Count": "White Blood Cells fight infection. High levels often indicate an infection or inflammation, while low levels can mean a weakened immune system.",
-    "RBC Count": "Red Blood Cells carry oxygen. Abnormal levels can indicate anemia, dehydration, or other blood disorders."
+    "RBC Count": "Red Blood Cells carry oxygen. Abnormal levels can indicate anemia, dehydration, or other blood disorders.",
+    "Sleep": "The total duration of your sleep. Adequate sleep is vital for physical and mental health.",
+    "Active Zone Minutes": "Time spent in heart-pumping activities. Helps improve cardiovascular fitness."
 };
+
+const FITNESS_LIFESTYLE_TESTS = [
+    "Weight", "BMI", "Body Fat", "Sleep", "Active Zone Minutes", 
+    "Muscle Mass", "Hydration", "BMR", "Skeletal Muscle Mass",
+    "Fat Free Mass", "Body Water"
+].map(t => t.toLowerCase());
+
+const COLORS = ['#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4'];
 
 const TrendView = ({ initialSelectedTest }) => {
     const [metrics, setMetrics] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedTest, setSelectedTest] = useState('');
+    const [selectedCheckboxes, setSelectedCheckboxes] = useState([]);
     const [availableTests, setAvailableTests] = useState([]);
     const [testCounts, setTestCounts] = useState({});
 
@@ -35,7 +46,6 @@ const TrendView = ({ initialSelectedTest }) => {
             .then(data => {
                 setMetrics(data);
 
-                // Count occurrences of each test
                 const counts = {};
                 data.forEach(item => {
                     if (item.test_name && item.value && item.report_date) {
@@ -45,20 +55,20 @@ const TrendView = ({ initialSelectedTest }) => {
 
                 setTestCounts(counts);
 
-                // Filter tests with >= 2 data points, sort by count (descending)
                 const tests = Object.keys(counts)
                     .filter(test => counts[test] >= 2)
                     .sort((a, b) => counts[b] - counts[a]);
 
                 setAvailableTests(tests);
 
-                // Use initialSelectedTest if provided and exists in available tests
-                if (initialSelectedTest && tests.includes(initialSelectedTest)) {
+                const bloods = tests.filter(t => !FITNESS_LIFESTYLE_TESTS.includes(t.toLowerCase()));
+
+                if (initialSelectedTest && bloods.includes(initialSelectedTest)) {
                     setSelectedTest(initialSelectedTest);
-                } else if (tests.length > 0) {
-                    setSelectedTest(tests[0]);
+                } else if (bloods.length > 0) {
+                    setSelectedTest(bloods[0]);
                 } else {
-                    setSelectedTest(''); // Reset if no tests match
+                    setSelectedTest('');
                 }
                 setLoading(false);
             })
@@ -68,120 +78,274 @@ const TrendView = ({ initialSelectedTest }) => {
             });
     }, [initialSelectedTest]);
 
+    const toggleCheckbox = (testName) => {
+        setSelectedCheckboxes(prev => 
+            prev.includes(testName) ? prev.filter(t => t !== testName) : [...prev, testName]
+        );
+    };
 
-    // Helper to parse reference range
     const parseReferenceRange = (rangeStr) => {
         if (!rangeStr) return { min: null, max: null };
-
-        // Clean string
         const clean = rangeStr.trim().toLowerCase();
-
-        // Handle "min-max" (e.g. "13.5-17.5")
         const rangeMatch = clean.match(/([\d.]+)\s*-\s*([\d.]+)/);
-        if (rangeMatch) {
-            return { min: parseFloat(rangeMatch[1]), max: parseFloat(rangeMatch[2]) };
-        }
-
-        // Handle "< max" (e.g. "< 200")
+        if (rangeMatch) return { min: parseFloat(rangeMatch[1]), max: parseFloat(rangeMatch[2]) };
         if (clean.includes('<')) {
             const match = clean.match(/[\d.]+/);
             if (match) return { min: 0, max: parseFloat(match[0]) };
         }
-
-        // Handle "> min" (e.g. "> 50")
         if (clean.includes('>')) {
             const match = clean.match(/[\d.]+/);
             if (match) return { min: parseFloat(match[0]), max: null };
         }
-
         return { min: null, max: null };
     };
 
-    // Prepare data for chart
-    const chartData = metrics
-        .filter(item => item.test_name === selectedTest)
-        .filter(item => item.report_date && item.value)
-        .map(item => {
+    if (loading) return <div>Loading trends...</div>;
+
+    const fitnessTests = availableTests.filter(t => FITNESS_LIFESTYLE_TESTS.includes(t.toLowerCase()));
+    const bloodTests = availableTests.filter(t => !FITNESS_LIFESTYLE_TESTS.includes(t.toLowerCase()));
+
+    const activeTests = [selectedTest, ...selectedCheckboxes].filter(Boolean);
+    const combinedDataMap = {};
+
+    activeTests.forEach(testName => {
+        let testMetrics = metrics
+            .filter(item => item.test_name === testName)
+            .filter(item => item.report_date && item.value);
+
+        if (FITNESS_LIFESTYLE_TESTS.includes(testName.toLowerCase())) {
+            const aggregated = {};
+            testMetrics.forEach(item => {
+                let val = parseFloat(item.value);
+                if (isNaN(val)) {
+                    const match = item.value.toString().match(/(\d+(\.\d+)?)/);
+                    if (match) val = parseFloat(match[0]);
+                }
+                if (isNaN(val)) return;
+
+                let cleanDate = item.report_date.replace(/\//g, ' ');
+                let dateObj = new Date(cleanDate);
+                if (isNaN(dateObj.getTime())) dateObj = new Date(item.report_date);
+                if (isNaN(dateObj.getTime())) return;
+                
+                const monthKey = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
+                const dayKey = item.report_date;
+                
+                if (!aggregated[monthKey]) {
+                    aggregated[monthKey] = {
+                        sum: 0,
+                        uniqueDays: new Set(),
+                        unit: item.unit,
+                        refRange: item.reference_range,
+                        dateObj: new Date(dateObj.getFullYear(), dateObj.getMonth(), 1)
+                    };
+                }
+                aggregated[monthKey].sum += val;
+                aggregated[monthKey].uniqueDays.add(dayKey);
+            });
+
+            testMetrics = Object.values(aggregated).map(agg => {
+                return {
+                    test_name: testName,
+                    report_date: agg.dateObj.toISOString(),
+                    value: (agg.sum / agg.uniqueDays.size).toFixed(2),
+                    total_sum: Math.round(agg.sum),
+                    unit: agg.unit,
+                    reference_range: agg.refRange,
+                    isAveraged: true
+                };
+            });
+        }
+
+        testMetrics.forEach(item => {
             let val = parseFloat(item.value);
             if (isNaN(val)) {
                 const match = item.value.toString().match(/(\d+(\.\d+)?)/);
                 if (match) val = parseFloat(match[0]);
             }
+            if (isNaN(val)) return;
 
-            const { min, max } = parseReferenceRange(item.reference_range);
-
-            // Format date (DD MMM YYYY)
-            // Handle "01/Jun/2022" by replacing / with space -> "01 Jun 2022" which is more parseable
             let cleanDate = item.report_date.replace(/\//g, ' ');
             let dateObj = new Date(cleanDate);
-
-            if (isNaN(dateObj.getTime())) {
-                // Fallback: try original
-                dateObj = new Date(item.report_date);
+            if (isNaN(dateObj.getTime())) dateObj = new Date(item.report_date);
+            const isValidDate = !isNaN(dateObj.getTime());
+            
+            const rawDate = isValidDate ? dateObj.toISOString() : item.report_date;
+            let displayDate = item.report_date;
+            if (isValidDate) {
+                if (item.isAveraged) {
+                    displayDate = dateObj.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+                } else {
+                    displayDate = dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+                }
             }
 
-            const isValidDate = !isNaN(dateObj.getTime());
-            const displayDate = isValidDate
-                ? dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-                : item.report_date;
+            let displayOriginalValue = item.isAveraged ? `${item.value} (Daily Avg)` : item.value;
+            let displayUnit = item.unit;
 
-            return {
-                date: displayDate,
-                rawDate: isValidDate ? dateObj.toISOString() : item.report_date, // Use ISO for sorting if valid
-                value: val,
-                originalValue: item.value,
-                unit: item.unit,
-                refMin: min,
-                refMax: max,
-                refRange: item.reference_range
-            };
-        })
-        .sort((a, b) => new Date(a.rawDate) - new Date(b.rawDate));
+            if (testName === 'Sleep') {
+                const totalMins = Math.round(val * 60);
+                const h = Math.floor(totalMins / 60);
+                const m = totalMins % 60;
+                const timeStr = `${h}h ${m}m`;
+                displayOriginalValue = item.isAveraged ? `${timeStr} (Daily Avg)` : timeStr;
+                displayUnit = '';
+            } else if (testName === 'Active Zone Minutes' && item.isAveraged && item.total_sum !== undefined) {
+                displayOriginalValue = `${item.value} (Daily Avg) / ${item.total_sum} (Monthly Total)`;
+            }
 
-    if (loading) return <div>Loading trends...</div>;
+            if (!combinedDataMap[rawDate]) {
+                combinedDataMap[rawDate] = {
+                    date: displayDate,
+                    rawDate: rawDate
+                };
+            }
+
+            combinedDataMap[rawDate][testName] = val;
+            combinedDataMap[rawDate][`${testName}_original`] = displayOriginalValue;
+            combinedDataMap[rawDate][`${testName}_unit`] = displayUnit;
+
+            if (testName === selectedTest) {
+                const { min, max } = parseReferenceRange(item.reference_range);
+                combinedDataMap[rawDate].refMin = min;
+                combinedDataMap[rawDate].refMax = max;
+                combinedDataMap[rawDate].refRange = item.reference_range;
+                combinedDataMap[rawDate].originalPrimaryValue = displayOriginalValue;
+                combinedDataMap[rawDate].primaryUnit = displayUnit;
+            }
+        });
+    });
+
+    let chartData = Object.values(combinedDataMap).sort((a, b) => new Date(a.rawDate) - new Date(b.rawDate));
+    
+    // Filter chart timeline to start max 12 months before the earliest primary biomarker data point
+    if (selectedTest) {
+        let earliestBiomarkerDate = null;
+        for (const item of chartData) {
+            if (item[selectedTest] !== undefined) {
+                earliestBiomarkerDate = new Date(item.rawDate);
+                break; // Because the array is strictly sorted chronologically
+            }
+        }
+        
+        if (earliestBiomarkerDate) {
+            const minAllowedDate = new Date(earliestBiomarkerDate);
+            minAllowedDate.setFullYear(minAllowedDate.getFullYear() - 1);
+            
+            chartData = chartData.filter(item => {
+                return new Date(item.rawDate) >= minAllowedDate;
+            });
+        }
+    }
+
+    const showOverlays = selectedCheckboxes.length > 0;
 
     return (
         <div className="results-container">
             <h2>Health Trends</h2>
 
-            <div style={{ marginBottom: '2rem' }}>
-                <label style={{ fontWeight: 'bold', marginRight: '1rem' }}>Select Test:</label>
-                <select
-                    value={selectedTest}
-                    onChange={(e) => setSelectedTest(e.target.value)}
-                    style={{ padding: '0.5rem', borderRadius: '0.5rem', border: '1px solid #ccc' }}
-                >
-                    {availableTests.map(test => (
-                        <option key={test} value={test}>{test} ({testCounts[test]})</option>
-                    ))}
-                </select>
+            <div style={{ marginBottom: '2rem', display: 'flex', gap: '2rem', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                <div style={{ minWidth: '200px' }}>
+                    <label style={{ fontWeight: 'bold', marginRight: '1rem', display: 'block', marginBottom: '0.5rem' }}>Primary Biomarker:</label>
+                    <select
+                        value={selectedTest}
+                        onChange={(e) => setSelectedTest(e.target.value)}
+                        style={{ padding: '0.5rem', borderRadius: '0.5rem', border: '1px solid #ccc', width: '100%' }}
+                    >
+                        {bloodTests.map(test => (
+                            <option key={test} value={test}>{test} ({testCounts[test] || 0})</option>
+                        ))}
+                    </select>
+                </div>
+
+                {fitnessTests.length > 0 && (
+                    <div style={{ borderLeft: '1px solid #e5e7eb', paddingLeft: '2rem', flex: 1 }}>
+                        <label style={{ fontWeight: 'bold', display: 'block', marginBottom: '0.5rem', color: '#4b5563' }}>Overlay Lifestyle Metrics:</label>
+                        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                            {fitnessTests.map((test, index) => {
+                                const isChecked = selectedCheckboxes.includes(test);
+                                const color = COLORS[index % COLORS.length];
+                                return (
+                                    <label key={test} style={{ 
+                                        display: 'flex', alignItems: 'center', gap: '0.4rem', 
+                                        fontSize: '0.9rem', cursor: 'pointer', 
+                                        color: isChecked ? color : '#6b7280',
+                                        background: isChecked ? `${color}15` : 'transparent',
+                                        padding: '0.3rem 0.6rem',
+                                        borderRadius: '0.3rem',
+                                        border: `1px solid ${isChecked ? color : '#e5e7eb'}`,
+                                        transition: 'all 0.2s'
+                                    }}>
+                                        <input 
+                                            type="checkbox" 
+                                            checked={isChecked} 
+                                            onChange={() => toggleCheckbox(test)} 
+                                            style={{ accentColor: color, cursor: 'pointer' }}
+                                        />
+                                        {test}
+                                    </label>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
             </div>
 
             {chartData.length > 0 ? (
-                <div style={{ width: '100%', height: 400, background: 'white', padding: '1rem', borderRadius: '1rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
+                <div style={{ width: '100%', height: 450, background: 'white', padding: '1rem 1rem 1rem 0', borderRadius: '1rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
                     <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={chartData}>
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey="date" />
-                            <YAxis domain={['auto', 'auto']} />
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                            <XAxis dataKey="date" tick={{fontSize: 12}} />
+                            <YAxis yAxisId="left" domain={['auto', 'auto']} tick={{fontSize: 12}} stroke="#2563eb" />
+                            {showOverlays && <YAxis yAxisId="right" orientation="right" domain={['auto', 'auto']} tick={{fontSize: 12}} stroke="#9ca3af" />}
+                            
                             <Tooltip content={({ active, payload, label }) => {
                                 if (active && payload && payload.length) {
                                     const data = payload[0].payload;
                                     return (
-                                        <div style={{ background: 'white', padding: '1rem', border: '1px solid #ccc', borderRadius: '0.5rem' }}>
-                                            <p style={{ fontWeight: 'bold' }}>{label}</p>
-                                            <p>{`Value: ${data.originalValue} ${data.unit || ''}`}</p>
-                                            {data.refRange && <p style={{ color: '#666', fontSize: '0.9em' }}>{`Normal: ${data.refRange}`}</p>}
+                                        <div style={{ background: 'white', padding: '1rem', border: '1px solid #e2e8f0', borderRadius: '0.5rem', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
+                                            <p style={{ fontWeight: 'bold', marginBottom: '0.5rem', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.5rem' }}>{label}</p>
+                                            
+                                            {payload.map((entry, idx) => {
+                                                if (entry.dataKey === 'refMin' || entry.dataKey === 'refMax') return null;
+                                                const testName = entry.dataKey;
+                                                const originalVal = data[`${testName}_original`];
+                                                const unit = data[`${testName}_unit`] || '';
+                                                if (originalVal === undefined) return null; // Node might exist through connectNulls but we hover over a strict empty gap
+
+                                                return (
+                                                    <p key={idx} style={{ color: entry.color, margin: '0.3rem 0', fontWeight: '500' }}>
+                                                        {testName}: <span style={{color: '#1e293b'}}>{originalVal} {unit}</span>
+                                                    </p>
+                                                );
+                                            })}
+
+                                            {data.refRange && (
+                                                <p style={{ color: '#64748b', fontSize: '0.85em', marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px dashed #e2e8f0' }}>
+                                                    {selectedTest} Normal: {data.refRange}
+                                                </p>
+                                            )}
                                         </div>
                                     );
                                 }
                                 return null;
                             }} />
-                            <Legend />
-                            <Line type="monotone" dataKey="value" stroke="#2563eb" strokeWidth={2} activeDot={{ r: 8 }} name={selectedTest} />
-                            {/* Reference Lines */}
-                            <Line type="step" dataKey="refMin" stroke="#10b981" strokeDasharray="5 5" dot={false} name="Min Normal" connectNulls />
-                            <Line type="step" dataKey="refMax" stroke="#ef4444" strokeDasharray="5 5" dot={false} name="Max Normal" connectNulls />
+                            <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                            
+                            {/* Primary Marker Line */}
+                            {selectedTest && (
+                                <Line yAxisId="left" type="monotone" dataKey={selectedTest} stroke="#2563eb" strokeWidth={3} activeDot={{ r: 8 }} name={selectedTest} connectNulls={true} />
+                            )}
+
+                            {/* Secondary Checkbox Lines */}
+                            {selectedCheckboxes.map((test, index) => (
+                                <Line key={test} yAxisId={showOverlays ? "right" : "left"} type="monotone" dataKey={test} stroke={COLORS[index % COLORS.length]} strokeWidth={2} strokeDasharray="5 5" name={test} connectNulls={true} dot={{r: 3}} activeDot={{r: 6}} />
+                            ))}
+
+                            {/* Reference Lines attached to primary axis exclusively */}
+                            <Line yAxisId="left" type="step" dataKey="refMin" stroke="#10b981" strokeDasharray="3 3" dot={false} name="Min Normal" connectNulls={true} />
+                            <Line yAxisId="left" type="step" dataKey="refMax" stroke="#ef4444" strokeDasharray="3 3" dot={false} name="Max Normal" connectNulls={true} />
                         </LineChart>
                     </ResponsiveContainer>
                 </div>
@@ -198,9 +362,9 @@ const TrendView = ({ initialSelectedTest }) => {
             )}
 
             {/* Data Points Table */}
-            {chartData.length > 0 && (
+            {chartData.length > 0 && !showOverlays && (
                 <div style={{ marginTop: '2rem' }}>
-                    <h3>Data Points</h3>
+                    <h3>Historical Data</h3>
                     <div style={{ overflowX: 'auto', borderRadius: '0.5rem', border: '1px solid #e5e7eb' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
                             <thead>
@@ -212,17 +376,23 @@ const TrendView = ({ initialSelectedTest }) => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {chartData.map((point, index) => (
-                                    <tr key={index} style={{ borderBottom: index < chartData.length - 1 ? '1px solid #e5e7eb' : 'none', background: index % 2 === 0 ? 'white' : '#f9fafb' }}>
+                                {chartData.filter(d => d.originalPrimaryValue !== undefined).map((point, index) => (
+                                    <tr key={index} style={{ borderBottom: '1px solid #e5e7eb', background: index % 2 === 0 ? 'white' : '#f9fafb' }}>
                                         <td style={{ padding: '0.75rem 1rem', color: '#111827' }}>{point.date}</td>
-                                        <td style={{ padding: '0.75rem 1rem', color: '#111827', fontWeight: '500' }}>{point.originalValue}</td>
-                                        <td style={{ padding: '0.75rem 1rem', color: '#6b7280' }}>{point.unit}</td>
+                                        <td style={{ padding: '0.75rem 1rem', color: '#111827', fontWeight: '500' }}>{point.originalPrimaryValue}</td>
+                                        <td style={{ padding: '0.75rem 1rem', color: '#6b7280' }}>{point.primaryUnit}</td>
                                         <td style={{ padding: '0.75rem 1rem', color: '#6b7280' }}>{point.refRange || '-'}</td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
                     </div>
+                </div>
+            )}
+            
+            {showOverlays && (
+                <div style={{ marginTop: '2rem', padding: '1rem', background: '#f8fafc', borderRadius: '0.5rem', color: '#64748b', fontSize: '0.9rem', textAlign: 'center' }}>
+                    Raw historical data table is hidden while multiple datasets are overlaid. Disable checkboxes to view strictly {selectedTest} logs.
                 </div>
             )}
         </div>
