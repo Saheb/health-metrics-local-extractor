@@ -4,8 +4,8 @@ import os
 import gc
 
 MODELS_DIR = "models"
-# Default to the known mistral name, or fallback dynamically later
-DEFAULT_MODEL_NAME = "mistral-7b-instruct-v0.2.Q4_K_M.gguf"
+# Default to the known Meta Llama name, or fallback dynamically later
+DEFAULT_MODEL_NAME = "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf"
 
 def get_available_models():
     """Returns a list of all .gguf files in the models directory."""
